@@ -105,9 +105,6 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(at 12% 15%, rgba(99,102,241,0.25), transparent 60%),
-    radial-gradient(at 90% 85%, rgba(6,182,212,0.18), transparent 55%);
   mix-blend-mode: plus-lighter;
   opacity: 0.7;
 }
@@ -226,6 +223,102 @@ body {
 }
 .msg-row.user .mini-role-tag { color: #ecfeff; background: rgba(0,0,0,0.18); }
 .plain-text { font-size: 14px; line-height: 1.6; font-weight: 450; }
+
+/* Assistant thinking block */
+.thinking-shell {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+  background: linear-gradient(150deg, rgba(35,51,78,0.75), rgba(16,24,38,0.65));
+  border: 1px solid rgba(148,163,184,0.28);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+  position: relative;
+  overflow: visible;
+}
+.thinking-shell.live {
+  border-color: rgba(99,102,241,0.45);
+  background: linear-gradient(150deg, rgba(52,72,112,0.82), rgba(21,30,48,0.72));
+  box-shadow: 0 12px 26px -16px rgba(99,102,241,0.6), inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.thinking-shell.done {
+  background: linear-gradient(150deg, rgba(29,42,66,0.62), rgba(14,22,38,0.62));
+  border-color: rgba(148,163,184,0.2);
+}
+.thinking-shell.collapsed {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  margin-left: 10px;
+}
+.thinking-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  font-weight: 650;
+  color: #c7d2fe;
+  margin-bottom: 6px;
+}
+.thinking-window {
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  border-radius: 8px;
+  padding-right: 6px;
+}
+.thinking-window.overflowing:after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 24px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(15,23,42,0), rgba(15,23,42,0.85));
+}
+.thinking-window.overflowing:before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 20px;
+  pointer-events: none;
+  background: linear-gradient(0deg, rgba(15,23,42,0), rgba(15,23,42,0.6));
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.thinking-window.overflowing.scrolled:before { opacity: 1; }
+.thinking-window.overflowing.scrolled-bottom:after { opacity: 0; }
+.thinking-text {
+  font-size: 13.2px;
+  line-height: 1.45;
+  color: #e0e7ff;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.thinking-placeholder {
+  font-size: 12.6px;
+  color: rgba(226,232,240,0.75);
+  font-style: italic;
+  line-height: 1.4;
+}
+.thinking-placeholder.final {
+  font-style: normal;
+  color: rgba(203,213,225,0.7);
+}
+.thinking-toggle {
+  padding: 4px 10px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+}
+.thinking-shell.collapsed .thinking-toggle {
+  margin: 0;
+}
 
 /* Typing indicator */
 .typing {

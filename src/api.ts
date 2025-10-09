@@ -16,7 +16,7 @@ export type SearchTraceAttempt = {
 }
 
 export type StructuredResponse = {
-  answer: string
+  answer?: string
   sources: Source[]
   search_trace?: SearchTraceAttempt[]
   methodology?: string
@@ -41,15 +41,23 @@ export type ChatResponse = {
   raw: unknown
 }
 
+export type InvokeAgentThinkingUpdate = {
+  delta?: string
+  replace?: string
+  done?: boolean
+}
+
+export type InvokeAgentOptions = {
+  onChunk?: (chunk: string) => void
+  onThinking?: (update: InvokeAgentThinkingUpdate) => void
+}
 const AGENT_RUNTIME_ARN = import.meta.env.VITE_AGENT_RUNTIME_ARN
 const AGENT_REGION = import.meta.env.VITE_BEDROCK_REGION || 'eu-central-1'
 
-if (!AGENT_RUNTIME_ARN) {
-  throw new Error('Missing VITE_AGENT_RUNTIME_ARN environment variable')
-}
-
-const encodedArn = encodeURIComponent(AGENT_RUNTIME_ARN)
-const AGENT_ENDPOINT = `https://bedrock-agentcore.${AGENT_REGION}.amazonaws.com/runtimes/${encodedArn}/invocations?qualifier=DEFAULT`
+const encodedArn = AGENT_RUNTIME_ARN ? encodeURIComponent(AGENT_RUNTIME_ARN) : ''
+const AGENT_ENDPOINT = AGENT_RUNTIME_ARN
+  ? `https://bedrock-agentcore.${AGENT_REGION}.amazonaws.com/runtimes/${encodedArn}/invocations?qualifier=DEFAULT`
+  : '/api/invocations?stream=true'
 
 function buildPayload(req: ChatRequest) {
   const payload: Record<string, unknown> = {
@@ -68,7 +76,7 @@ function buildPayload(req: ChatRequest) {
   return payload
 }
 
-export async function invokeAgent(req: ChatRequest): Promise<ChatResponse> {
+export async function invokeAgent(req: ChatRequest, options?: InvokeAgentOptions): Promise<ChatResponse> {
   const session = await fetchAuthSession()
   const token = session.tokens?.accessToken?.toString()
   if (!token) throw new Error('Unable to acquire access token for AgentCore invocation')
@@ -80,30 +88,203 @@ export async function invokeAgent(req: ChatRequest): Promise<ChatResponse> {
   if (sessionId.length < 33) {
     sessionId = sessionId.padEnd(33, '0')
   }
-  const res = await fetch(AGENT_ENDPOINT, {
+
+  const endpoint = buildEndpoint()
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': sessionId,
+    Accept: options?.onChunk ? 'text/event-stream' : 'application/json'
+  }
+
+  const res = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': sessionId
-    },
+    headers,
     body: JSON.stringify(buildPayload(req))
   })
 
+  if (res.status === 404) {
+    // Some endpoints do not support SSE yet; retry without streaming
+    if (headers.Accept === 'text/event-stream') {
+      const retryHeaders = { ...headers, Accept: 'application/json' }
+      const retryRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: retryHeaders,
+        body: JSON.stringify(buildPayload(req))
+      })
+      const retryBody = await retryRes.text()
+      if (!retryRes.ok) {
+        throw new Error(retryBody || `HTTP ${retryRes.status}`)
+      }
+      const parsed = safeJsonParse(retryBody)
+      return interpretParsedResponse(parsed)
+    }
+  }
+
+  if (res.status === 400 && headers.Accept === 'text/event-stream') {
+    const errorBody = await res.text()
+    const retryHeaders = { ...headers, Accept: 'application/json' }
+    const retryRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: retryHeaders,
+      body: JSON.stringify(buildPayload(req))
+    })
+    const retryBody = await retryRes.text()
+    if (!retryRes.ok) {
+      const message = retryBody || errorBody
+      throw new Error(message || `HTTP ${retryRes.status}`)
+    }
+    const parsed = safeJsonParse(retryBody)
+    return interpretParsedResponse(parsed)
+  }
+
+  const contentType = res.headers.get('content-type') || ''
+  if (res.status >= 400) {
+    const message = await res.text()
+    throw new Error(message || `HTTP ${res.status}`)
+  }
+
+  if (options?.onChunk && contentType.includes('text/event-stream') && res.body) {
+    return consumeStreamResponse(res, options)
+  }
+
   const rawBody = await res.text()
-  if (!res.ok) {
-    const message = rawBody || `HTTP ${res.status}`
-    throw new Error(`Agent invocation failed: ${message}`)
+  const parsed = safeJsonParse(rawBody)
+  return interpretParsedResponse(parsed)
+}
+
+function buildEndpoint(): string {
+  return AGENT_ENDPOINT
+}
+
+async function consumeStreamResponse(res: Response, options: InvokeAgentOptions): Promise<ChatResponse> {
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let aggregated = ''
+  let finalPayload: any
+  let thinkingBuffer = ''
+  let thinkingFinalized = false
+
+  const notifyThinkingDone = (finalText?: string) => {
+    if (thinkingFinalized) return
+    if (finalText && finalText.trim().length > 0) {
+      options.onThinking?.({ replace: finalText, done: true })
+    } else {
+      options.onThinking?.({ done: true })
+    }
+    thinkingFinalized = true
   }
 
-  let parsed: unknown
+  const consume = () => {
+    let index: number
+    while ((index = buffer.indexOf('\n\n')) !== -1) {
+      const rawEvent = buffer.slice(0, index).trim()
+      buffer = buffer.slice(index + 2)
+      if (!rawEvent) continue
+      const event = parseSseEvent(rawEvent)
+      if (!event) continue
+      if ('done' in event && event.done) {
+        continue
+      }
+      if (event.type === 'thinking') {
+        if (typeof event.content === 'string' && event.content) {
+          thinkingBuffer += event.content
+          options.onThinking?.({ delta: event.content })
+        }
+        continue
+      }
+      if (event.type === 'chunk' && typeof event.content === 'string') {
+        aggregated += event.content
+        options.onChunk?.(event.content)
+      } else if (event.type === 'final') {
+        finalPayload = event
+      } else if (event.type === 'error') {
+        notifyThinkingDone()
+        throw new Error(event.message || 'Stream error')
+      }
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    consume()
+  }
+
+  if (buffer.trim().length > 0) {
+    buffer += '\n\n'
+    consume()
+  }
+
+  if (finalPayload) {
+    const synthetic = {
+      output: finalPayload.agentcore,
+      response: finalPayload.response
+    }
+    const interpreted = interpretParsedResponse(synthetic)
+    if (aggregated && (!interpreted.reply || interpreted.reply === 'No response')) {
+      interpreted.reply = aggregated
+    }
+    interpreted.raw = finalPayload
+    const finalThinking = extractThinking(finalPayload) ?? thinkingBuffer
+    if (options.onThinking) {
+      notifyThinkingDone(finalThinking)
+    }
+    return interpreted
+  }
+
+  if (aggregated) {
+    if (options.onThinking) {
+      notifyThinkingDone(thinkingBuffer)
+    }
+    return { reply: aggregated, structuredData: undefined, raw: aggregated }
+  }
+
+  if (options.onThinking) {
+    notifyThinkingDone(thinkingBuffer)
+  }
+  return { reply: 'No response', structuredData: undefined, raw: null }
+}
+
+function parseSseEvent(segment: string): any {
+  const lines = segment.split('\n')
+  const dataLines = lines
+    .map(line => line.trim())
+    .filter(line => line.startsWith('data:'))
+    .map(line => line.slice(5).trim())
+
+  if (dataLines.length === 0) {
+    return null
+  }
+
+  const dataString = dataLines.join('\n')
+  if (!dataString) {
+    return null
+  }
+
+  if (dataString === '[DONE]') {
+    return { done: true }
+  }
+
   try {
-    parsed = rawBody ? JSON.parse(rawBody) : {}
+    return JSON.parse(dataString)
   } catch {
-    parsed = rawBody
+    return { type: 'chunk', content: dataString }
   }
+}
 
+function safeJsonParse(text: string): unknown {
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function interpretParsedResponse(parsed: unknown): ChatResponse {
   let reply = 'No response'
   let structuredData: StructuredResponse | undefined
 
@@ -116,19 +297,50 @@ export async function invokeAgent(req: ChatRequest): Promise<ChatResponse> {
       if (typeof message === 'string') {
         reply = message
       } else if (message && typeof message === 'object') {
-        if ('answer' in message) {
-          reply = (message as any).answer ?? reply
-          structuredData = normalizeStructuredResponse(message)
+        const answerValue = (message as any).answer
+        if (typeof answerValue === 'string' && answerValue.trim().length > 0) {
+          reply = answerValue
+          structuredData = normalizeStructuredResponse({ ...message, answer: answerValue })
+        } else if ('raw' in message && typeof message.raw === 'string') {
+          reply = message.raw
+        } else if ('answer' in message) {
+          // answer field present but empty; keep searching for better content
+          const normalized = normalizeStructuredResponse(message)
+          if (normalized.answer) {
+            reply = normalized.answer
+            structuredData = normalized
+          }
+        } else if ('raw' in message && typeof message.raw === 'string') {
+          reply = message.raw
         } else {
           reply = JSON.stringify(message)
         }
       }
     } else if (typeof response === 'string') {
       reply = response
+      try {
+        const maybeJson = JSON.parse(response)
+        if (maybeJson && typeof maybeJson === 'object' && 'answer' in maybeJson) {
+          const normalized = normalizeStructuredResponse(maybeJson)
+          if (normalized.answer) {
+            structuredData = normalized
+            reply = normalized.answer
+          }
+        }
+      } catch {
+        // ignore
+      }
     } else if (response && typeof response === 'object') {
-      if ('answer' in response) {
-        reply = (response as any).answer ?? reply
-  structuredData = normalizeStructuredResponse(response)
+      const answerValue = (response as any).answer
+      if (typeof answerValue === 'string' && answerValue.trim().length > 0) {
+        reply = answerValue
+        structuredData = normalizeStructuredResponse({ ...response, answer: answerValue })
+      } else if ('answer' in response) {
+        const normalized = normalizeStructuredResponse(response)
+        if (normalized.answer) {
+          reply = normalized.answer
+          structuredData = normalized
+        }
       } else {
         reply = JSON.stringify(response)
       }
@@ -144,11 +356,41 @@ export async function invokeAgent(req: ChatRequest): Promise<ChatResponse> {
 
 function normalizeStructuredResponse(data: unknown): StructuredResponse {
   const candidate = (data && typeof data === 'object') ? data as Record<string, unknown> : {}
+  const answer = typeof candidate.answer === 'string' && candidate.answer.trim().length > 0
+    ? candidate.answer
+    : undefined
   return {
-    answer: typeof candidate.answer === 'string' ? candidate.answer : 'No answer provided',
+    answer,
     sources: Array.isArray(candidate.sources) ? candidate.sources as Source[] : [],
     search_trace: Array.isArray(candidate.search_trace) ? candidate.search_trace as SearchTraceAttempt[] : undefined,
     methodology: typeof candidate.methodology === 'string' ? candidate.methodology : undefined,
     limitations: typeof candidate.limitations === 'string' ? candidate.limitations : undefined
   }
+}
+
+function extractThinking(finalPayload: any): string | undefined {
+  if (!finalPayload || typeof finalPayload !== 'object') return undefined
+
+  const candidates: unknown[] = [
+    (finalPayload as any).thinking,
+    (finalPayload as any).reasoning,
+    finalPayload.agentcore?.thinking,
+    finalPayload.agentcore?.reasoning,
+    finalPayload.agentcore?.metadata?.thinking,
+    finalPayload.agentcore?.metadata?.reasoning,
+    finalPayload.agentcore?.output?.thinking,
+    finalPayload.agentcore?.output?.reasoning,
+    finalPayload.response?.thinking,
+    finalPayload.response?.reasoning,
+    finalPayload.response?.metadata?.thinking,
+    finalPayload.response?.metadata?.reasoning
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate
+    }
+  }
+
+  return undefined
 }
