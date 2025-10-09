@@ -1,0 +1,272 @@
+/* Custom AWS Amplify Authenticator Theme - matching dark UI */
+/* Override Amplify UI React default styles */
+.amplify-button{
+    color: white;
+}
+[data-amplify-authenticator] {
+  --amplify-colors-background-primary: var(--bg);
+  --amplify-colors-background-secondary: var(--bg-accent1);
+  --amplify-colors-background-tertiary: var(--bg-accent2);
+  
+  
+  --amplify-colors-border-primary: var(--border);
+  --amplify-colors-border-secondary: var(--border-strong);
+  --amplify-colors-border-tertiary: rgba(255, 255, 255, 0.14);
+  
+  --amplify-colors-brand-primary-10: #6366f1;
+  --amplify-colors-brand-primary-20: #818cf8;
+  --amplify-colors-brand-primary-40: #6366f1;
+  --amplify-colors-brand-primary-60: #4f46e5;
+  --amplify-colors-brand-primary-80: #4338ca;
+  --amplify-colors-brand-primary-90: #3730a3;
+  --amplify-colors-brand-primary-100: #312e81;
+  
+  --amplify-colors-font-primary: #ffffff;
+  --amplify-colors-font-secondary: var(--text-dim);
+  --amplify-colors-font-tertiary: var(--muted);
+  --amplify-colors-font-interactive: #6366f1;
+  --amplify-colors-font-hover: #818cf8;
+  --amplify-colors-font-focus: #a5b4fc;
+  --amplify-colors-font-active: #6366f1;
+  
+  --amplify-components-authenticator-router-background-color: transparent;
+  --amplify-components-authenticator-router-border-width: 0;
+  
+  --amplify-components-button-primary-background-color: linear-gradient(140deg, #6366f1, #3b82f6 50%, #0ea5e9 90%);
+  --amplify-components-button-primary-hover-background-color: linear-gradient(140deg, #818cf8, #60a5fa 50%, #22d3ee 90%);
+  --amplify-components-button-primary-focus-background-color: linear-gradient(140deg, #6366f1, #3b82f6 50%, #0ea5e9 90%);
+  --amplify-components-button-primary-active-background-color: linear-gradient(140deg, #4f46e5, #2563eb 50%, #0284c7 90%);
+  --amplify-components-button-primary-color: #f8fafc;
+  
+  --amplify-components-button-link-color: #6366f1;
+  --amplify-components-button-link-hover-color: #818cf8;
+  --amplify-components-button-link-hover-background-color: rgba(99, 102, 241, 0.1);
+  
+  --amplify-components-fieldcontrol-border-color: var(--border-strong);
+  --amplify-components-fieldcontrol-focus-border-color: #6366f1;
+  --amplify-components-fieldcontrol-background-color: linear-gradient(180deg, rgba(30,41,59,0.75), rgba(17,24,39,0.75));
+  --amplify-components-fieldcontrol-color: #ffffff;
+  
+  --amplify-components-tabs-item-active-border-color: #6366f1;
+  --amplify-components-tabs-item-active-color: #ffffff;
+  --amplify-components-tabs-item-color: var(--text-dim);
+  --amplify-components-tabs-item-hover-color: #ffffff;
+  --amplify-components-tabs-item-focus-color: #ffffff;
+  
+  --amplify-radii-small: 8px;
+  --amplify-radii-medium: 14px;
+  --amplify-radii-large: 20px;
+  --amplify-radii-xl: 24px;
+  
+  --amplify-space-small: 0.5rem;
+  --amplify-space-medium: 1rem;
+  --amplify-space-large: 1.5rem;
+  --amplify-space-xl: 2rem;
+}
+
+/* Authenticator container */
+[data-amplify-authenticator] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+  background: 
+    radial-gradient(1000px 700px at 8% -10%, rgba(67,56,202,0.33), transparent 70%),
+    radial-gradient(1000px 700px at 110% 10%, rgba(14,165,233,0.25), transparent 65%),
+    linear-gradient(145deg, #0b1220, #121d30 55%, #0f1827);
+}
+
+/* Form container */
+[data-amplify-authenticator] [data-amplify-container] {
+  background: linear-gradient(165deg, rgba(49,65,98,0.55), rgba(19,27,40,0.85) 65%);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 24px;
+  padding: 32px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 
+    0 0 0 1px rgba(255,255,255,0.04),
+    0 4px 16px -2px rgba(0,0,0,0.5),
+    0 8px 32px -4px rgba(0,0,0,0.35);
+}
+
+/* Header */
+[data-amplify-authenticator] [data-amplify-router-content] > div:first-child {
+  margin-bottom: 24px;
+}
+
+/* Form fields */
+[data-amplify-authenticator] .amplify-input,
+[data-amplify-authenticator] .amplify-select {
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 450;
+  transition: border-color 160ms ease, box-shadow 220ms ease;
+}
+
+[data-amplify-authenticator] .amplify-input:focus,
+[data-amplify-authenticator] .amplify-select:focus {
+  box-shadow: 0 0 0 2px rgb(255, 255, 255), 0 0 0 4px rgba(99,102,241,0.55);
+}
+
+/* Buttons */
+[data-amplify-authenticator] .amplify-button--primary {
+  padding: 14px 22px;
+  border-radius: 18px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 4px 18px -4px rgba(59,130,246,0.6), 0 0 0 1px rgba(255,255,255,0.12);
+  transition: transform 140ms ease, box-shadow 200ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+[data-amplify-authenticator] .amplify-button--primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255,255,255,0.35), rgba(255,255,255,0) 42%);
+  mix-blend-mode: overlay;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+[data-amplify-authenticator] .amplify-button--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px -6px rgba(59,130,246,0.75), 0 0 0 1px rgba(255,255,255,0.2);
+}
+
+[data-amplify-authenticator] .amplify-button--primary:active {
+  transform: translateY(0);
+}
+
+[data-amplify-authenticator] .amplify-button--link {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 12px;
+  transition: background 160ms ease;
+}
+
+/* Tabs */
+[data-amplify-authenticator] .amplify-tabs-item {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 14px 14px 0 0;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+[data-amplify-authenticator] .amplify-tabs-item[data-state="active"] {
+  background: linear-gradient(165deg, rgba(99,102,241,0.2), rgba(14,165,233,0.15));
+}
+
+/* Error messages */
+[data-amplify-authenticator] .amplify-alert {
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  background: linear-gradient(145deg, rgba(239,68,68,0.15), rgba(185,28,28,0.2));
+  border: 1px solid rgba(239,68,68,0.4);
+  color: #fecaca;
+}
+
+/* Links */
+[data-amplify-authenticator] a {
+  color: #6366f1;
+  text-decoration: none;
+  transition: color 160ms ease;
+}
+
+[data-amplify-authenticator] a:hover {
+  color: hsl(0, 0%, 100%);
+}
+
+/* Labels */
+[data-amplify-authenticator] .amplify-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+[data-amplify-authenticator] .amplify-input {
+  color: #ffffff;
+}
+.amplify-text {
+  color: #ffffff;
+}
+/* Field descriptions */
+[data-amplify-authenticator] .amplify-text--tertiary {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Heading */
+[data-amplify-authenticator] .amplify-heading {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: linear-gradient(92deg, #fff, #dbeafe 45%, #93c5fd 75%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  margin-bottom: 8px;
+}
+
+/* Divider */
+[data-amplify-authenticator] .amplify-divider {
+  border-color: var(--border);
+  margin: 20px 0;
+}
+
+/* Loading state */
+[data-amplify-authenticator] .amplify-loader {
+  --loader-border: rgba(99, 102, 241, 0.3);
+  --loader-active-border: #6366f1;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 560px) {
+  [data-amplify-authenticator] [data-amplify-container] {
+    padding: 24px;
+    border-radius: 20px;
+  }
+  
+  [data-amplify-authenticator] .amplify-input,
+  [data-amplify-authenticator] .amplify-select {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  
+  [data-amplify-authenticator] .amplify-button--primary {
+    padding: 12px 18px;
+  }
+  
+  [data-amplify-authenticator] .amplify-heading {
+    font-size: 20px;
+  }
+}
+
+/* Hide the default Authenticator when signed in */
+[data-amplify-authenticator][data-amplify-authenticated="true"] {
+  background: none;
+  padding: 0;
+  min-height: auto;
+}
+
+[data-amplify-authenticator][data-amplify-authenticated="true"] [data-amplify-container] {
+  background: none;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+  max-width: none;
+}
