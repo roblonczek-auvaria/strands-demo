@@ -3,10 +3,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 type Option = { value: string; label: string }
 
 const OPTIONS: Option[] = [
-  { value: '', label: '(fără topic)' },
-  { value: 'FISCALITATE, CONTABILITATE', label: 'Fiscalitate / Contabilitate' },
-  { value: 'DIGITALIZARE, INTELIGENȚĂ ARTIFICIALĂ', label: 'Digitalizare / Inteligență Artificială' },
-  { value: 'SERVICII PUBLICE', label: 'Servicii Publice' }
+  { value: '', label: 'Topic' },
+  { value: 'GETTING_STARTED', label: 'Getting Started' },
+  { value: 'API_REFERENCE', label: 'API Reference' },
+  { value: 'BEST_PRACTICES', label: 'Best Practices' }
 ]
 
 export interface TopicSelectProps {

@@ -552,7 +552,7 @@ function App() {
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Ask about Romanian legal documents, treaties, or international agreements..."
+            placeholder="Ask anything about the ATP documentation"
             disabled={loading}
             className="input"
             style={{flex:1}}
@@ -562,7 +562,7 @@ function App() {
               value={topic}
               onChange={setTopic}
               disabled={loading}
-              title="Selectează un topic pentru filtrare"
+              title="Choose a topic"
             />
           </div>
           <label className="recent-laws-switch" title="Limit results to recent / currently active laws">
@@ -575,7 +575,7 @@ function App() {
             <span className="switch-pill" aria-hidden>
               <span className="thumb" />
             </span>
-            <span className="rl-label">Recent Laws</span>
+            <span className="rl-label">Active only</span>
           </label>
         </div>
         <button type="submit" disabled={loading || !input.trim()} className="button" style={{marginLeft:'auto'}}>
