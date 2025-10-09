@@ -2,31 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useAuthenticator } from '@aws-amplify/ui-react'
 import './App.css'
 import TopicSelect from './TopicSelect'
-
-
-
-type Source = {
-  file_id: string
-  id_act_baza: string
-  articolul?: string
-}
-
-type SearchTraceAttempt = {
-  attempt: number
-  query: string
-  retrieved_count: number
-  retrieved_file_ids?: string[]
-  chosen_file_ids?: string[]
-  reasoning?: string
-}
-
-type StructuredResponse = {
-  answer: string
-  sources: Source[]
-  search_trace?: SearchTraceAttempt[]
-  methodology?: string
-  limitations?: string
-}
+import { invokeAgent } from './api'
+import type { StructuredResponse } from './api'
 
 type Message = {
   id: string
@@ -149,31 +126,22 @@ function App() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/invocations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: text, topic: topic || undefined, active_only: activeOnly || undefined })
+      const historyPayload = [...messages, userMsg]
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({
+          role: m.role,
+          content: m.structuredData?.answer ?? m.content
+        }))
+
+      const { reply, structuredData } = await invokeAgent({
+        message: text,
+        history: historyPayload,
+        topic: topic || undefined,
+        activeOnly: activeOnly || undefined
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json() as { response?: string; error?: string }
-      const reply = data.response ?? data.error ?? 'No response'
-      
-      // Try to parse structured JSON response
-      let structuredData: StructuredResponse | undefined
-      let displayContent = reply
-      
-      try {
-        const parsed = JSON.parse(reply)
-        if (parsed && typeof parsed === 'object' && parsed.answer) {
-          // Accept even if sources array is empty or absent; default to []
-          if (!Array.isArray(parsed.sources)) parsed.sources = []
-          structuredData = parsed as StructuredResponse
-          displayContent = parsed.answer
-        }
-      } catch {
-        // Not JSON; treat as plain text
-      }
-      
+
+      const displayContent = structuredData?.answer ?? reply
+
       const botMsg: Message = { 
         id: crypto.randomUUID(), 
         role: 'assistant', 
@@ -182,7 +150,8 @@ function App() {
       }
       setMessages((prev: Message[]) => [...prev, botMsg])
     } catch (err: any) {
-      const botMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${err?.message ?? 'request failed'}` }
+      const errorMessage = err?.message || 'request failed'
+      const botMsg: Message = { id: crypto.randomUUID(), role: 'assistant', content: `Error: ${errorMessage}` }
       setMessages((prev: Message[]) => [...prev, botMsg])
     } finally {
       setLoading(false)
