@@ -112,7 +112,9 @@
 [data-amplify-authenticator] .amplify-select:focus {
   box-shadow: 0 0 0 2px rgb(255, 255, 255), 0 0 0 4px rgba(99,102,241,0.55);
 }
-
+.amplify-button--disabled {
+  background-color: hsla(197.1, 36.8%, 18.6%, 0.92);
+}
 /* Buttons */
 [data-amplify-authenticator] .amplify-button--primary {
   padding: 14px 22px;
