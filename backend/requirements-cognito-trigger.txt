@@ -1,0 +1,2 @@
+# Requirements for Cognito Pre-Sign Up Trigger Lambda
+# No external dependencies required - uses only Python standard library
