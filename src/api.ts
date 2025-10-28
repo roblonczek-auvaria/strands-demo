@@ -97,10 +97,16 @@ export async function invokeAgent(req: ChatRequest, options?: InvokeAgentOptions
     Accept: options?.onChunk ? 'text/event-stream' : 'application/json'
   }
 
+  // Build payload and explicitly request streaming when we expect chunks
+  const basePayload = buildPayload(req)
+  if (options?.onChunk) {
+    ;(basePayload as any).stream = true
+  }
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers,
-    body: JSON.stringify(buildPayload(req))
+    body: JSON.stringify(basePayload)
   })
 
   if (res.status === 404) {
@@ -145,7 +151,30 @@ export async function invokeAgent(req: ChatRequest, options?: InvokeAgentOptions
   }
 
   if (options?.onChunk && contentType.includes('text/event-stream') && res.body) {
-    return consumeStreamResponse(res, options)
+    try {
+      return await consumeStreamResponse(res, options)
+    } catch (e: any) {
+      const msg = e?.message || ''
+      // Fallback: if streaming ended prematurely, retry without SSE
+      if (/response ended prematurely/i.test(msg) || /stream error/i.test(msg)) {
+        const retryHeaders = { ...headers, Accept: 'application/json' }
+        // Remove stream flag for retry
+        const retryPayload = { ...basePayload }
+        delete (retryPayload as any).stream
+        const retryRes = await fetch(endpoint, {
+          method: 'POST',
+          headers: retryHeaders,
+          body: JSON.stringify(retryPayload)
+        })
+        const retryBody = await retryRes.text()
+        if (!retryRes.ok) {
+          throw new Error(retryBody || msg || `HTTP ${retryRes.status}`)
+        }
+        const parsed = safeJsonParse(retryBody)
+        return interpretParsedResponse(parsed)
+      }
+      throw e
+    }
   }
 
   const rawBody = await res.text()
