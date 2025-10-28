@@ -31,8 +31,7 @@ export type ChatMessage = {
 export type ChatRequest = {
   message: string
   history?: ChatMessage[]
-  topic?: string
-  activeOnly?: boolean
+  modelId?: string
 }
 
 export type ChatResponse = {
@@ -65,9 +64,13 @@ function buildPayload(req: ChatRequest) {
   }
 
   const input: Record<string, unknown> = {}
-  if (req.topic) input.topic = req.topic
-  if (req.activeOnly) input.active_only = true
+  if (req.modelId) input.model_id = req.modelId
   if (Object.keys(input).length > 0) payload.input = input
+
+  if (req.modelId) {
+    // Also support top-level for future compatibility (server accepts both)
+    payload.model_id = req.modelId
+  }
 
   if (req.history && req.history.length > 0) {
     payload.history = req.history

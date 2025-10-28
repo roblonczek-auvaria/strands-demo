@@ -1,0 +1,334 @@
+diff --git a/.env.development b/.env.development
+index bcd7be8..4f373e3 100644
+--- a/.env.development
++++ b/.env.development
+@@ -1,2 +1,2 @@
+-VITE_AGENT_RUNTIME_ARN=arn:aws:bedrock-agentcore:eu-central-1:081302066317:runtime/demo_rag_streaming_agent-OBqoXV6WzQ
++#VITE_AGENT_RUNTIME_ARN=arn:aws:bedrock-agentcore:eu-central-1:081302066317:runtime/demo_rag_streaming_agent-OBqoXV6WzQ
+ VITE_BEDROCK_REGION=eu-central-1
+\ No newline at end of file
+diff --git a/src/App.tsx b/src/App.tsx
+index de54365..29c05ff 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,7 +1,7 @@
+ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+ import { useAuthenticator } from '@aws-amplify/ui-react'
+ import './App.css'
+-import TopicSelect from './TopicSelect'
++import ModelSelect from './ModelSelect'
+ import { invokeAgent } from './api'
+ import type { StructuredResponse } from './api'
+ 
+@@ -305,8 +305,10 @@ function App() {
+   const [input, setInput] = useState('')
+   const [loading, setLoading] = useState(false)
+   const [resetting, setResetting] = useState(false)
+-  const [topic, setTopic] = useState<string>('')
+-  const [activeOnly, setActiveOnly] = useState<boolean>(false)
++
++  // Default immediately to Nova Pro so the selector renders that value before backend /api/models fetch.
++  const [modelId, setModelId] = useState<string>('eu.amazon.nova-pro-v1:0')
++  // Removed activeOnly toggle (no longer needed)
+   const listEndRef = useRef<HTMLDivElement>(null)
+   const streamBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Buffers streaming chunks for smoother renders.
+   const thinkingBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Mirrors above for thinking traces.
+@@ -330,6 +332,28 @@ function App() {
+     listEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+   }, [messages, loading])
+ 
++  // Initialize default model from backend once when app mounts.
++  useEffect(() => {
++    let cancelled = false
++    async function initModel() {
++      try {
++        const res = await fetch('/api/models')
++        if (!res.ok) return
++        const data = await res.json()
++        if (cancelled) return
++        // Keep existing selection; optionally sync if backend default differs.
++        if (typeof data.default_model === 'string' && data.default_model !== modelId) {
++          // If you prefer to always enforce backend default, uncomment:
++          // setModelId(data.default_model)
++        }
++      } catch {
++        // ignore
++      }
++    }
++    initModel()
++    return () => { cancelled = true }
++  }, [modelId])
++
+   async function sendMessage(e?: React.FormEvent) {
+     e?.preventDefault()
+     const text = input.trim()
+@@ -365,8 +389,7 @@ function App() {
+       const { reply, structuredData } = await invokeAgent({
+         message: text,
+         history: historyPayload,
+-        topic: topic || undefined,
+-        activeOnly: activeOnly || undefined
++        modelId: modelId || undefined
+       }, {
+         onChunk: (chunk) => {
+           if (!chunk) return
+@@ -557,26 +580,15 @@ function App() {
+             className="input"
+             style={{flex:1}}
+           />
+-          <div style={{maxWidth:'280px', flex:'0 0 auto'}}>
+-            <TopicSelect
+-              value={topic}
+-              onChange={setTopic}
++          <div style={{maxWidth:'240px', flex:'0 0 auto'}}>
++            <ModelSelect
++              value={modelId}
++              onChange={setModelId}
+               disabled={loading}
+-              title="Choose a topic"
++              title="Choose foundation model"
+             />
+           </div>
+-          <label className="recent-laws-switch" title="Limit results to recent / currently active laws">
+-            <input
+-              type="checkbox"
+-              checked={activeOnly}
+-              disabled={loading}
+-              onChange={e => setActiveOnly(e.target.checked)}
+-            />
+-            <span className="switch-pill" aria-hidden>
+-              <span className="thumb" />
+-            </span>
+-            <span className="rl-label">Active only</span>
+-          </label>
++          {/* Active only toggle removed */}
+         </div>
+         <button type="submit" disabled={loading || !input.trim()} className="button" style={{marginLeft:'auto'}}>
+           {loading ? 'Sending…' : 'Send'}
+diff --git a/src/TopicSelect.tsx b/src/TopicSelect.tsx
+deleted file mode 100644
+index 340ae1b..0000000
+--- a/src/TopicSelect.tsx
++++ /dev/null
+@@ -1,125 +0,0 @@
+-import React, { useCallback, useEffect, useRef, useState } from 'react'
+-
+-type Option = { value: string; label: string }
+-
+-const OPTIONS: Option[] = [
+-  { value: '', label: 'Topic' },
+-  { value: 'GETTING_STARTED', label: 'Getting Started' },
+-  { value: 'API_REFERENCE', label: 'API Reference' },
+-  { value: 'BEST_PRACTICES', label: 'Best Practices' }
+-]
+-
+-export interface TopicSelectProps {
+-  value: string
+-  onChange: (value: string) => void
+-  disabled?: boolean
+-  title?: string
+-}
+-
+-export function TopicSelect({ value, onChange, disabled, title }: TopicSelectProps) {
+-  const [open, setOpen] = useState(false)
+-  const rootRef = useRef<HTMLDivElement | null>(null)
+-  const listRef = useRef<HTMLUListElement | null>(null)
+-  const activeIndex = OPTIONS.findIndex(o => o.value === value)
+-
+-  const close = useCallback(() => setOpen(false), [])
+-
+-  // Outside click / escape handling
+-  useEffect(() => {
+-    if (!open) return
+-    function handler(e: MouseEvent) {
+-      if (!rootRef.current) return
+-      if (!rootRef.current.contains(e.target as Node)) close()
+-    }
+-    function onKey(e: KeyboardEvent) {
+-      if (e.key === 'Escape') close()
+-    }
+-    window.addEventListener('mousedown', handler)
+-    window.addEventListener('keydown', onKey)
+-    return () => {
+-      window.removeEventListener('mousedown', handler)
+-      window.removeEventListener('keydown', onKey)
+-    }
+-  }, [open, close])
+-
+-  // Keyboard navigation when open
+-  useEffect(() => {
+-    if (!open) return
+-    function onKey(e: KeyboardEvent) {
+-      if (!['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) return
+-      e.preventDefault()
+-      const current = OPTIONS.findIndex(o => o.value === value)
+-      if (e.key === 'ArrowDown') {
+-        const next = (current + 1) % OPTIONS.length
+-        onChange(OPTIONS[next].value)
+-      } else if (e.key === 'ArrowUp') {
+-        const prev = (current - 1 + OPTIONS.length) % OPTIONS.length
+-        onChange(OPTIONS[prev].value)
+-      } else if (e.key === 'Enter' || e.key === ' ') {
+-        close()
+-      }
+-    }
+-    window.addEventListener('keydown', onKey)
+-    return () => window.removeEventListener('keydown', onKey)
+-  }, [open, value, onChange, close])
+-
+-  function toggle() {
+-    if (disabled) return
+-    setOpen(o => !o)
+-  }
+-
+-  function selectOption(val: string) {
+-    onChange(val)
+-    close()
+-  }
+-
+-  return (
+-    <div
+-      ref={rootRef}
+-      className={`topic-select ${open ? 'open' : ''} ${disabled ? 'disabled' : ''}`}
+-      data-disabled={disabled || undefined}
+-    >
+-      <button
+-        type="button"
+-        className="topic-trigger"
+-        aria-haspopup="listbox"
+-        aria-expanded={open}
+-        onClick={toggle}
+-        disabled={disabled}
+-        title={title}
+-      >
+-        <span className={`topic-value ${value ? 'has' : 'placeholder'}`}>
+-          {OPTIONS.find(o => o.value === value)?.label || OPTIONS[0].label}
+-        </span>
+-        <span className="topic-caret" aria-hidden>▴</span>
+-      </button>
+-      {open && (
+-        <ul
+-          ref={listRef}
+-          className="topic-menu"
+-          role="listbox"
+-          aria-activedescendant={activeIndex >= 0 ? `topic-opt-${activeIndex}` : undefined}
+-        >
+-          {OPTIONS.map((opt, i) => {
+-            const active = opt.value === value
+-            return (
+-              <li
+-                id={`topic-opt-${i}`}
+-                key={opt.value || 'empty'}
+-                role="option"
+-                aria-selected={active}
+-                className={`topic-option ${active ? 'active' : ''}`}
+-                onClick={() => selectOption(opt.value)}
+-              >
+-                <span>{opt.label}</span>
+-                {active && <span className="check" aria-hidden>✓</span>}
+-              </li>
+-            )
+-          })}
+-        </ul>
+-      )}
+-    </div>
+-  )
+-}
+-
+-export default TopicSelect
+diff --git a/src/api.ts b/src/api.ts
+index 4d74fb6..8f27771 100644
+--- a/src/api.ts
++++ b/src/api.ts
+@@ -31,8 +31,7 @@ export type ChatMessage = {
+ export type ChatRequest = {
+   message: string
+   history?: ChatMessage[]
+-  topic?: string
+-  activeOnly?: boolean
++  modelId?: string
+ }
+ 
+ export type ChatResponse = {
+@@ -65,10 +64,14 @@ function buildPayload(req: ChatRequest) {
+   }
+ 
+   const input: Record<string, unknown> = {}
+-  if (req.topic) input.topic = req.topic
+-  if (req.activeOnly) input.active_only = true
++  if (req.modelId) input.model_id = req.modelId
+   if (Object.keys(input).length > 0) payload.input = input
+ 
++  if (req.modelId) {
++    // Also support top-level for future compatibility (server accepts both)
++    payload.model_id = req.modelId
++  }
++
+   if (req.history && req.history.length > 0) {
+     payload.history = req.history
+   }
+diff --git a/src/styles.css b/src/styles.css
+index 0cbe64c..26d1c39 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -734,60 +734,3 @@ body { overflow-x: hidden; }
+   .topic-option { padding: 9px 12px 10px 12px; font-size: 12.5px; }
+ }
+ 
+-/* =========================== */
+-/* Recent Laws toggle switch   */
+-/* =========================== */
+-.recent-laws-switch {
+-  --pill-w: 44px;
+-  --pill-h: 22px;
+-  --thumb: 16px;
+-  display: inline-flex;
+-  align-items: center;
+-  gap: 8px;
+-  font-size: 12.5px;
+-  font-weight: 500;
+-  cursor: pointer;
+-  color: var(--text-dim);
+-  line-height: 1;
+-  position: relative;
+-  padding: 2px 4px;
+-  border-radius: 14px;
+-  transition: color 160ms ease, background 200ms ease;
+-}
+-.recent-laws-switch input { position: absolute; opacity: 0; pointer-events: none; }
+-.recent-laws-switch .switch-pill {
+-  position: relative;
+-  width: var(--pill-w);
+-  height: var(--pill-h);
+-  border-radius: 999px;
+-  background: linear-gradient(145deg, rgba(51,65,85,0.8), rgba(30,41,59,0.8));
+-  border: 1px solid rgba(255,255,255,0.15);
+-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 2px 4px -2px rgba(0,0,0,0.5);
+-  transition: background 220ms ease, border-color 220ms ease;
+-  flex-shrink: 0;
+-}
+-.recent-laws-switch .thumb {
+-  position: absolute;
+-  top: 50%;
+-  left: 3px;
+-  width: var(--thumb);
+-  height: var(--thumb);
+-  border-radius: 50%;
+-  background: linear-gradient(145deg, #6366f1, #4f46e5 60%);
+-  transform: translateY(-50%);
+-  box-shadow: 0 2px 4px -1px rgba(0,0,0,0.6), 0 4px 10px -4px rgba(99,102,241,0.6), inset 0 0 0 1px rgba(255,255,255,0.25);
+-  transition: transform 260ms cubic-bezier(.55,.2,.25,1.25), background 220ms ease, box-shadow 220ms ease;
+-}
+-.recent-laws-switch .rl-label { font-weight: 600; letter-spacing: 0.3px; color: var(--text-dim); }
+-.recent-laws-switch:hover .switch-pill { border-color: rgba(255,255,255,0.35); }
+-.recent-laws-switch:active .thumb { transform: translateY(-50%) scale(.92); }
+-.recent-laws-switch input:focus-visible + .switch-pill { box-shadow: var(--focus-ring); }
+-.recent-laws-switch input:checked + .switch-pill .thumb {
+-  transform: translate(calc(var(--pill-w) - var(--thumb) - 5px), -50%);
+-  background: linear-gradient(145deg, #0d9488, #0284c7 65%);
+-  box-shadow: 0 2px 5px -1px rgba(0,0,0,0.55), 0 4px 14px -4px rgba(6,182,212,0.6), inset 0 0 0 1px rgba(255,255,255,0.3);
+-}
+-.recent-laws-switch input:checked + .switch-pill { background: linear-gradient(145deg, rgba(13,148,136,0.75), rgba(6,182,212,0.65)); border-color: rgba(255,255,255,0.25); }
+-.recent-laws-switch input:checked ~ .rl-label { color: #f0fdfa; }
+-.recent-laws-switch.compact { --pill-w: 38px; --pill-h: 20px; --thumb: 14px; }
+-@media (max-width: 560px) { .recent-laws-switch { gap: 6px; font-size: 12px; } }

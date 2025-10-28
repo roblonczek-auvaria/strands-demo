@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuthenticator } from '@aws-amplify/ui-react'
 import './App.css'
-import TopicSelect from './TopicSelect'
+import ModelSelect from './ModelSelect'
 import { invokeAgent } from './api'
 import type { StructuredResponse } from './api'
 
@@ -305,8 +305,10 @@ function App() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [resetting, setResetting] = useState(false)
-  const [topic, setTopic] = useState<string>('')
-  const [activeOnly, setActiveOnly] = useState<boolean>(false)
+
+  // Default immediately to Nova Pro so the selector renders that value before backend /api/models fetch.
+  const [modelId, setModelId] = useState<string>('eu.amazon.nova-pro-v1:0')
+  // Removed activeOnly toggle (no longer needed)
   const listEndRef = useRef<HTMLDivElement>(null)
   const streamBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Buffers streaming chunks for smoother renders.
   const thinkingBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Mirrors above for thinking traces.
@@ -329,6 +331,28 @@ function App() {
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // Initialize default model from backend once when app mounts.
+  useEffect(() => {
+    let cancelled = false
+    async function initModel() {
+      try {
+        const res = await fetch('/api/models')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled) return
+        // Keep existing selection; optionally sync if backend default differs.
+        if (typeof data.default_model === 'string' && data.default_model !== modelId) {
+          // If you prefer to always enforce backend default, uncomment:
+          // setModelId(data.default_model)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    initModel()
+    return () => { cancelled = true }
+  }, [modelId])
 
   async function sendMessage(e?: React.FormEvent) {
     e?.preventDefault()
@@ -365,8 +389,7 @@ function App() {
       const { reply, structuredData } = await invokeAgent({
         message: text,
         history: historyPayload,
-        topic: topic || undefined,
-        activeOnly: activeOnly || undefined
+        modelId: modelId || undefined
       }, {
         onChunk: (chunk) => {
           if (!chunk) return
@@ -557,26 +580,15 @@ function App() {
             className="input"
             style={{flex:1}}
           />
-          <div style={{maxWidth:'280px', flex:'0 0 auto'}}>
-            <TopicSelect
-              value={topic}
-              onChange={setTopic}
+          <div style={{maxWidth:'240px', flex:'0 0 auto'}}>
+            <ModelSelect
+              value={modelId}
+              onChange={setModelId}
               disabled={loading}
-              title="Choose a topic"
+              title="Choose foundation model"
             />
           </div>
-          <label className="recent-laws-switch" title="Limit results to recent / currently active laws">
-            <input
-              type="checkbox"
-              checked={activeOnly}
-              disabled={loading}
-              onChange={e => setActiveOnly(e.target.checked)}
-            />
-            <span className="switch-pill" aria-hidden>
-              <span className="thumb" />
-            </span>
-            <span className="rl-label">Active only</span>
-          </label>
+          {/* Active only toggle removed */}
         </div>
         <button type="submit" disabled={loading || !input.trim()} className="button" style={{marginLeft:'auto'}}>
           {loading ? 'Sending…' : 'Send'}
