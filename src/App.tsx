@@ -4,6 +4,7 @@ import './App.css'
 import ModelSelect from './ModelSelect'
 import { invokeAgent, createSessionId } from './api'
 import type { StructuredResponse } from './api'
+import { TextWithCitations } from './TextWithCitations'
 
 type Message = {
   id: string
@@ -219,10 +220,23 @@ function StructuredMessage({ data }: { data: StructuredResponse }) {
     navigator.clipboard.writeText(rawJson).catch(() => {})
   }
 
+  function handleCitationClick(citationNumber: number) {
+    // For now, just scroll to sources section
+    // You can implement more specific behavior later
+    const sourcesSection = document.querySelector('.sources-section');
+    if (sourcesSection) {
+      sourcesSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
   return (
     <div className="structured-response">
       <div className="answer-section">
-        <div className="answer-text">{data.answer}</div>
+        <TextWithCitations 
+          text={data.answer || ''} 
+          className="answer-text"
+          onCitationClick={handleCitationClick}
+        />
       </div>
 
       {data.sources && data.sources.length > 0 && (
@@ -548,59 +562,68 @@ function App() {
         </div>
       </div>
 
-      <div className="chat-panel">
-        {messages.map((m: Message) => (
-          <div key={m.id} className={`msg-row ${m.role}`}>
-            <div className={`bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
-              <div className="mini-role-tag">{m.role === 'user' ? 'User' : 'AI'}</div>
-              {m.role === 'assistant' && typeof m.thinking === 'string'
-                ? (
-                  <ThinkingStream
-                    text={m.thinking}
-                    done={Boolean(m.thinkingDone)}
-                    collapsed={Boolean(m.thinkingCollapsed)}
-                    onToggle={() => toggleThinking(m.id)}
+      <div className="chat-area">
+        <div className="chat-panel">
+          {messages.map((m: Message) => (
+            <div key={m.id} className={`msg-row ${m.role}`}>
+              <div className={`bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
+                <div className="mini-role-tag">{m.role === 'user' ? 'User' : 'AI'}</div>
+                {m.role === 'assistant' && typeof m.thinking === 'string'
+                  ? (
+                    <ThinkingStream
+                      text={m.thinking}
+                      done={Boolean(m.thinkingDone)}
+                      collapsed={Boolean(m.thinkingCollapsed)}
+                      onToggle={() => toggleThinking(m.id)}
+                    />
+                  )
+                  : null}
+                {m.role === 'assistant' && m.structuredData ? (
+                  <StructuredMessage data={m.structuredData} />
+                ) : (
+                  <TextWithCitations 
+                    text={m.content} 
+                    className="plain-text"
+                    onCitationClick={(citationNumber) => {
+                      // Handle citation click for plain text messages
+                      console.log(`Citation ${citationNumber} clicked`);
+                    }}
                   />
-                )
-                : null}
-              {m.role === 'assistant' && m.structuredData ? (
-                <StructuredMessage data={m.structuredData} />
-              ) : (
-                <div className="plain-text">{m.content}</div>
-              )}
+                )}
+              </div>
             </div>
+          ))}
+          <div ref={listEndRef} />
+        </div>
+
+        <form onSubmit={sendMessage} className="input-bar" style={{flexWrap:'wrap', alignItems:'stretch'}}>
+          <div style={{display:'flex', flex: '1 1 auto', gap:'8px', minWidth:'260px'}}>
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Ask anything about the ATP documentation"
+              disabled={loading}
+              className="input"
+              style={{flex:1}}
+            />
+            <div style={{maxWidth:'240px', flex:'0 0 auto'}}>
+              <ModelSelect
+                value={modelId}
+                onChange={setModelId}
+                disabled={loading}
+                title="Choose foundation model"
+              />
+            </div>
+            {/* Active only toggle removed */}
           </div>
-        ))}
-        <div ref={listEndRef} />
+          <button type="submit" disabled={loading || !input.trim()} className="button" style={{marginLeft:'auto'}}>
+            {loading ? 'Sending…' : 'Send'}
+          </button>
+        </form>
       </div>
 
-      <form onSubmit={sendMessage} className="input-bar" style={{flexWrap:'wrap', alignItems:'stretch'}}>
-        <div style={{display:'flex', flex: '1 1 auto', gap:'8px', minWidth:'260px'}}>
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ask anything about the ATP documentation"
-            disabled={loading}
-            className="input"
-            style={{flex:1}}
-          />
-          <div style={{maxWidth:'240px', flex:'0 0 auto'}}>
-            <ModelSelect
-              value={modelId}
-              onChange={setModelId}
-              disabled={loading}
-              title="Choose foundation model"
-            />
-          </div>
-          {/* Active only toggle removed */}
-        </div>
-        <button type="submit" disabled={loading || !input.trim()} className="button" style={{marginLeft:'auto'}}>
-          {loading ? 'Sending…' : 'Send'}
-        </button>
-      </form>
-
-  <p className="helper"></p>
+      <p className="helper" />
     </div>
   )
 }

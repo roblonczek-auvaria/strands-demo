@@ -28,6 +28,9 @@
 html, body, #root {
   height: 100%;
 }
+html, body {
+  overflow: hidden;
+}
 body {
   margin: 0;
   background:
@@ -44,19 +47,23 @@ body {
 .app-shell {
   max-width: 1350px;
   margin: 0 auto;
-  padding: 26px 22px 30px;
+  padding: 16px 18px 0;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
   position: relative;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .header {
   display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 4px;
-  padding: 4px 4px 2px;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 0;
+  padding: 0 2px;
   border-radius: var(--radius);
 }
 .header-title {
@@ -83,31 +90,32 @@ body {
 }
 
 /* Chat panel */
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+}
+
 .chat-panel {
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  background: var(--grad-panel);
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
-  height: min(66vh, 760px);
-  min-height: 480px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px 12px 26px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.04), var(--shadow);
+  padding: 0 8px 24px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   display: flex;
   flex-direction: column;
   position: relative;
   scroll-behavior: smooth;
 }
-.chat-panel:before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  mix-blend-mode: plus-lighter;
-  opacity: 0.7;
-}
+.chat-panel:before { display: none; }
 
 /* Message row layout */
 /* Message rows */
@@ -350,7 +358,6 @@ body {
 .input-bar { 
   display: flex; 
   gap: 12px; 
-  margin-top: 10px; 
   padding: 14px 16px 16px; 
   background: linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015));
   border: 1px solid rgba(255,255,255,0.08);
@@ -358,8 +365,6 @@ body {
   border-radius: 24px;
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
-  position: sticky;
-  bottom: 4px;
   z-index: 10;
 }
 .input {
@@ -418,7 +423,7 @@ label > input[type="checkbox"] { transform: scale(1.05); cursor: pointer; }
 .button.subtle:hover:not(:disabled) { background: linear-gradient(145deg, rgba(99,102,241,0.32), rgba(14,165,233,0.35)); }
 
 /* Small helper text */
-.helper { color: var(--text-dim); font-size: 11.5px; margin-top: 4px; line-height: 1.5; opacity: 0.85; }
+.helper { color: var(--text-dim); font-size: 11.5px; margin: 0; line-height: 1.5; opacity: 0.85; }
 
 /* Structured response styles */
 .structured-response {
@@ -609,6 +614,34 @@ label > input[type="checkbox"] { transform: scale(1.05); cursor: pointer; }
 /* Enhanced bubble for structured content */
 .bubble.ai:has(.structured-response) { padding: 24px 26px 24px; }
 
+/* Citation styling */
+.citation-link {
+  font-size: 0.75em;
+  color: #3b82f6;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: all 160ms ease;
+  display: inline-block;
+  line-height: 1;
+  margin: 0 1px;
+  position: relative;
+  top: -0.25em;
+}
+
+.citation-link:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+  transform: scale(1.05);
+}
+
+.citation-link:active {
+  transform: scale(0.95);
+  background: rgba(59, 130, 246, 0.2);
+}
+
 /* Make sure horizontal scroll never appears */
 body, .chat-panel, .bubble { max-width: 100%; }
 body { overflow-x: hidden; }
@@ -622,11 +655,11 @@ body { overflow-x: hidden; }
 ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #475569, #1e293b); }
 
 @media (max-width: 1300px) {
-  .app-shell { padding: 18px 14px 26px; }
-  .chat-panel { border-radius: 18px; height: 64vh; }
+  .app-shell { padding: 18px 14px; }
+  .chat-panel { padding: 0 6px 10px; }
   .bubble { max-width: 90%; }
   .input-bar { flex-wrap: wrap; gap: 10px; padding: 14px 14px 18px; }
-  .button { width: 100%; order: 3; }
+  .button { order: 3; }
   .msg-row .bubble { font-size: 15px; }
   .header { flex-wrap: wrap; gap: 8px; }
   .header-title:after { width: 50%; }
@@ -733,4 +766,3 @@ body { overflow-x: hidden; }
   .topic-trigger { padding: 12px 38px 12px 14px; font-size: 13px; }
   .topic-option { padding: 9px 12px 10px 12px; font-size: 12.5px; }
 }
-
