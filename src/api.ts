@@ -32,6 +32,7 @@ export type ChatRequest = {
   message: string
   history?: ChatMessage[]
   modelId?: string
+  sessionId?: string
 }
 
 export type ChatResponse = {
@@ -58,6 +59,17 @@ const AGENT_ENDPOINT = AGENT_RUNTIME_ARN
   ? `https://bedrock-agentcore.${AGENT_REGION}.amazonaws.com/runtimes/${encodedArn}/invocations?qualifier=DEFAULT`
   : '/api/invocations?stream=true'
 
+export function createSessionId() {
+  const randomComponent = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().replace(/-/g, '')
+    : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+  let sessionId = `web_${randomComponent}_${Date.now()}`
+  if (sessionId.length < 33) {
+    sessionId = sessionId.padEnd(33, '0')
+  }
+  return sessionId
+}
+
 function buildPayload(req: ChatRequest) {
   const payload: Record<string, unknown> = {
     prompt: req.message
@@ -65,11 +77,15 @@ function buildPayload(req: ChatRequest) {
 
   const input: Record<string, unknown> = {}
   if (req.modelId) input.model_id = req.modelId
+  if (req.sessionId) input.session_id = req.sessionId
   if (Object.keys(input).length > 0) payload.input = input
 
   if (req.modelId) {
     // Also support top-level for future compatibility (server accepts both)
     payload.model_id = req.modelId
+  }
+  if (req.sessionId) {
+    payload.session_id = req.sessionId
   }
 
   if (req.history && req.history.length > 0) {
@@ -84,13 +100,7 @@ export async function invokeAgent(req: ChatRequest, options?: InvokeAgentOptions
   const token = session.tokens?.accessToken?.toString()
   if (!token) throw new Error('Unable to acquire access token for AgentCore invocation')
 
-  const randomComponent = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID().replace(/-/g, '')
-    : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-  let sessionId = `web_${randomComponent}_${Date.now()}`
-  if (sessionId.length < 33) {
-    sessionId = sessionId.padEnd(33, '0')
-  }
+  const sessionId = req.sessionId ?? createSessionId()
 
   const endpoint = buildEndpoint()
   const headers: Record<string, string> = {

@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuthenticator } from '@aws-amplify/ui-react'
 import './App.css'
 import ModelSelect from './ModelSelect'
-import { invokeAgent } from './api'
+import { invokeAgent, createSessionId } from './api'
 import type { StructuredResponse } from './api'
 
 type Message = {
@@ -305,6 +305,7 @@ function App() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [sessionId, setSessionId] = useState(() => createSessionId())
 
   // Default immediately to Nova Pro so the selector renders that value before backend /api/models fetch.
   const [modelId, setModelId] = useState<string>('eu.amazon.nova-pro-v1:0')
@@ -389,7 +390,8 @@ function App() {
       const { reply, structuredData } = await invokeAgent({
         message: text,
         history: historyPayload,
-        modelId: modelId || undefined
+        modelId: modelId || undefined,
+        sessionId
       }, {
         onChunk: (chunk) => {
           if (!chunk) return
@@ -504,12 +506,15 @@ function App() {
     if (loading || resetting) return
     setResetting(true)
     try {
-      await fetch('/api/reset', { method: 'POST' })
+      if (import.meta.env.DEV) {
+        await fetch('/api/reset', { method: 'POST' })
+      }
     } catch (e) {
       // ignore error, still clear client state
     } finally {
       setMessages([])
       setInput('')
+      setSessionId(createSessionId())
       setResetting(false)
     }
   }
