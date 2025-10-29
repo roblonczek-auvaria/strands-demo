@@ -6,6 +6,15 @@ export type Source = {
   articolul?: string
 }
 
+export type KnowledgeBaseDocument = {
+  id: string
+  distance: number
+  source: string
+  page_number: number
+  related_uris: string[]
+  content: string
+}
+
 export type SearchTraceAttempt = {
   attempt: number
   query: string
@@ -18,6 +27,7 @@ export type SearchTraceAttempt = {
 export type StructuredResponse = {
   answer?: string
   sources: Source[]
+  documents?: KnowledgeBaseDocument[]  // Add the knowledge base documents
   search_trace?: SearchTraceAttempt[]
   methodology?: string
   limitations?: string
@@ -404,6 +414,7 @@ function normalizeStructuredResponse(data: unknown): StructuredResponse {
   return {
     answer,
     sources: Array.isArray(candidate.sources) ? candidate.sources as Source[] : [],
+    documents: Array.isArray(candidate.documents) ? candidate.documents as KnowledgeBaseDocument[] : undefined,
     search_trace: Array.isArray(candidate.search_trace) ? candidate.search_trace as SearchTraceAttempt[] : undefined,
     methodology: typeof candidate.methodology === 'string' ? candidate.methodology : undefined,
     limitations: typeof candidate.limitations === 'string' ? candidate.limitations : undefined

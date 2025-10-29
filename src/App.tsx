@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useAuthenticator } from '@aws-amplify/ui-react'
 import './App.css'
 import ModelSelect from './ModelSelect'
@@ -214,7 +214,19 @@ function ThinkingStream({
 function StructuredMessage({ data }: { data: StructuredResponse }) {
   const [showTrace, setShowTrace] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
+  const [showDocuments, setShowDocuments] = useState(false)
+  const [expandedDocIds, setExpandedDocIds] = useState<Set<string>>(() => new Set())
+  const documentsSectionId = useId()
   const rawJson = JSON.stringify(data, null, 2)
+
+  // Debug: log documents presence to help diagnose missing rendering
+  useEffect(() => {
+    if (data.documents) {
+      console.debug('[StructuredMessage] documents count =', data.documents.length, data.documents)
+    } else {
+      console.debug('[StructuredMessage] no documents field present')
+    }
+  }, [data.documents])
 
   function copyRaw() {
     navigator.clipboard.writeText(rawJson).catch(() => {})
@@ -229,6 +241,18 @@ function StructuredMessage({ data }: { data: StructuredResponse }) {
     }
   }
 
+  function toggleDocument(id: string) {
+    setExpandedDocIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
   return (
     <div className="structured-response">
       <div className="answer-section">
@@ -238,6 +262,109 @@ function StructuredMessage({ data }: { data: StructuredResponse }) {
           onCitationClick={handleCitationClick}
         />
       </div>
+
+      {/* Minimal documents list (knowledge base retrievals) */}
+      {data.documents && data.documents.length > 0 && (
+        <div className={`kb-documents ${showDocuments ? 'open' : 'collapsed'}`}>
+          <button
+            type="button"
+            className={`kb-documents-header ${showDocuments ? 'open' : ''}`}
+            onClick={() => setShowDocuments(prev => !prev)}
+            aria-expanded={showDocuments}
+            aria-controls={documentsSectionId}
+          >
+            <span
+              className={`kb-documents-caret ${showDocuments ? 'open' : ''}`}
+              aria-hidden="true"
+            />
+            <span className="kb-documents-title">Retrieved Documents</span>
+            <span className="kb-documents-count">({data.documents.length})</span>
+          </button>
+          <div
+            id={documentsSectionId}
+            className={`kb-documents-body ${showDocuments ? 'open' : ''}`}
+          >
+            <ul className="kb-documents-list">
+              {data.documents.map((doc, docIndex) => {
+                const fileName = doc.source.split('/').pop() || doc.source
+                const distance = typeof doc.distance === 'number' ? doc.distance.toFixed(3) : null
+                const content = typeof doc.content === 'string' ? doc.content : ''
+                const isExpanded = expandedDocIds.has(doc.id)
+                const docPanelId = `kb-doc-panel-${docIndex}`
+                return (
+                  <li key={doc.id} className={`kb-document-card ${isExpanded ? 'expanded' : ''}`}>
+                    <button
+                      type="button"
+                      className={`kb-document-toggle ${isExpanded ? 'open' : ''}`}
+                      onClick={() => toggleDocument(doc.id)}
+                      aria-expanded={isExpanded}
+                      aria-controls={docPanelId}
+                    >
+                      <span className={`kb-document-toggle-caret ${isExpanded ? 'open' : ''}`} aria-hidden="true" />
+                      <div className="kb-document-info">
+                        <code className="kb-document-id">{doc.id}</code>
+                        <strong className="kb-document-title">{fileName}</strong>
+                        {doc.page_number != null && (
+                          <span className="kb-document-meta">p.{doc.page_number}</span>
+                        )}
+                        {distance && (
+                          <span className="kb-document-meta">dist {distance}</span>
+                        )}
+                      </div>
+                    </button>
+                    <div className={`kb-document-preview ${isExpanded ? 'expanded' : ''}`}>
+                      {content}
+                    </div>
+                    {isExpanded && (
+                      <div id={docPanelId} className="kb-document-details">
+                        <div className="kb-document-meta-grid">
+                          <div className="kb-document-meta-item">
+                            <span className="kb-document-meta-label">Source path</span>
+                            <span className="kb-document-meta-value">{doc.source}</span>
+                          </div>
+                          <div className="kb-document-meta-item">
+                            <span className="kb-document-meta-label">Document ID</span>
+                            <span className="kb-document-meta-value">{doc.id}</span>
+                          </div>
+                          {doc.page_number != null && (
+                            <div className="kb-document-meta-item">
+                              <span className="kb-document-meta-label">Page</span>
+                              <span className="kb-document-meta-value">{doc.page_number}</span>
+                            </div>
+                          )}
+                          {distance && (
+                            <div className="kb-document-meta-item">
+                              <span className="kb-document-meta-label">Vector distance</span>
+                              <span className="kb-document-meta-value">{distance}</span>
+                            </div>
+                          )}
+                        </div>
+                        {doc.related_uris && doc.related_uris.length > 0 && (
+                          <div className="kb-document-related expanded">
+                            <div className="kb-document-meta-label">Related assets</div>
+                            <ul className="kb-document-links">
+                              {doc.related_uris.map(uri => (
+                                <li key={uri}>
+                                  <a href={uri} target="_blank" rel="noopener noreferrer">{uri}</a>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!isExpanded && doc.related_uris && doc.related_uris.length > 0 && (
+                      <div className="kb-document-related">
+                        Related assets: {doc.related_uris.length}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {data.sources && data.sources.length > 0 && (
         <div className="sources-section">
@@ -325,9 +452,10 @@ function App() {
   const [modelId, setModelId] = useState<string>('eu.amazon.nova-pro-v1:0')
   // Removed activeOnly toggle (no longer needed)
   const listEndRef = useRef<HTMLDivElement>(null)
+  const inputBarRef = useRef<HTMLFormElement>(null)
   const streamBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Buffers streaming chunks for smoother renders.
   const thinkingBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Mirrors above for thinking traces.
-
+  
   useEffect(() => {
     return () => {
       streamBuffersRef.current.forEach(entry => {
@@ -346,6 +474,8 @@ function App() {
   useEffect(() => {
     listEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+
 
   // Initialize default model from backend once when app mounts.
   useEffect(() => {
@@ -545,29 +675,32 @@ function App() {
 
   return (
     <div className="app-shell">
-      <div className="header">
-        <h1 className="header-title">Strands RAG Agent</h1>
-        <div style={{marginLeft:'auto', display:'flex', gap:'8px', alignItems:'center'}}>
-          {user && (
-            <span style={{fontSize:'13px', color:'var(--text-dim)', marginRight:'4px'}}>
-              {user.signInDetails?.loginId || 'User'}
-            </span>
-          )}
-          <button type="button" className="button subtle" disabled={loading || resetting} onClick={resetConversation}>
-            {resetting ? 'Resetting…' : 'Reset Chat'}
-          </button>
-          <button type="button" className="button subtle" onClick={signOut}>
-            Sign Out
-          </button>
+      <div className="header-shell">
+        <div className="header">
+          <h1 className="header-title">Strands RAG Agent</h1>
+          <div style={{marginLeft:'auto', display:'flex', gap:'8px', alignItems:'center'}}>
+            {user && (
+              <span style={{fontSize:'13px', color:'var(--text-dim)', marginRight:'4px'}}>
+                {user.signInDetails?.loginId || 'User'}
+              </span>
+            )}
+            <button type="button" className="button subtle" disabled={loading || resetting} onClick={resetConversation}>
+              {resetting ? 'Resetting…' : 'Reset Chat'}
+            </button>
+            <button type="button" className="button subtle" onClick={signOut}>
+              Sign Out
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="chat-area">
-        <div className="chat-panel">
-          {messages.map((m: Message) => (
-            <div key={m.id} className={`msg-row ${m.role}`}>
-              <div className={`bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
-                <div className="mini-role-tag">{m.role === 'user' ? 'User' : 'AI'}</div>
+      <div className="app-main">
+        <div className="chat-area">
+          <div className="chat-panel">
+            {messages.map((m: Message) => (
+              <div key={m.id} className={`msg-row ${m.role}`}>
+                <div className={`bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
+                  <div className="mini-role-tag">{m.role === 'user' ? 'User' : 'AI'}</div>
                 {m.role === 'assistant' && typeof m.thinking === 'string'
                   ? (
                     <ThinkingStream
@@ -593,10 +726,18 @@ function App() {
               </div>
             </div>
           ))}
-          <div ref={listEndRef} />
+          <div ref={listEndRef} className="chat-panel-end" />
         </div>
 
-        <form onSubmit={sendMessage} className="input-bar" style={{flexWrap:'wrap', alignItems:'stretch'}}>
+      </div>
+
+      <div className="input-bar-container">
+        <form
+          ref={inputBarRef}
+          onSubmit={sendMessage}
+          className="input-bar"
+          style={{flexWrap:'wrap', alignItems:'stretch'}}
+        >
           <div style={{display:'flex', flex: '1 1 auto', gap:'8px', minWidth:'260px'}}>
             <input
               type="text"
@@ -623,7 +764,8 @@ function App() {
         </form>
       </div>
 
-      <p className="helper" />
+        <p className="helper" />
+      </div>
     </div>
   )
 }
