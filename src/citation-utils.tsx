@@ -6,95 +6,120 @@ export interface Citation {
   number: number;
 }
 
-/**
- * Parses citation patterns like %[1]%, %[2]%, etc. from text
- * Deduplicates citations so each document is only cited once
- */
-export function parseCitations(text: string): { citations: Citation[]; cleanText: string } {
-  const citationPattern = /%\[(\d+)\]%/g;
-  const foundCitations = new Set<number>();
-  const citations: Citation[] = [];
-  
-  // Find all unique citation numbers
-  let match;
-  while ((match = citationPattern.exec(text)) !== null) {
-    const number = parseInt(match[1], 10);
-    if (!foundCitations.has(number)) {
-      foundCitations.add(number);
-      citations.push({
-        id: `citation-${number}`,
-        number
-      });
-    }
-  }
-  
-  // Sort citations by number for consistent ordering
-  citations.sort((a, b) => a.number - b.number);
-  
-  // Replace citation patterns with placeholder markers
-  let cleanText = text.replace(citationPattern, (_, num) => `__CITATION_${num}__`);
-  
-  return { citations, cleanText };
+const CITATION_PATTERNS = [
+  /%\[(\d+)\]%/g,                // %[1]% style
+] as const;
+
+function getCitationRegex(): RegExp {
+  return /%\[(\d+)\]%/g;
 }
 
-/**
- * Renders text with citation superscripts
- * Returns JSX elements with clickable citation superscripts
- */
+function extractCitationNumber(match: RegExpExecArray): number {
+  for (let i = 1; i < match.length; i += 1) {
+    const group = match[i];
+    if (group != null) {
+      const num = Number(group);
+      if (Number.isFinite(num)) {
+        return num;
+      }
+    }
+  }
+  return NaN;
+}
+
+export function parseCitations(text: string): { citations: Citation[]; cleanText: string } {
+  const found = new Set<number>();
+  const citations: Citation[] = [];
+
+  for (const pattern of CITATION_PATTERNS) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      const num = Number(match[1]);
+      if (Number.isFinite(num) && !found.has(num)) {
+        found.add(num);
+        citations.push({
+          id: `citation-${num}`,
+          number: num
+        });
+      }
+    }
+  }
+
+  citations.sort((a, b) => a.number - b.number);
+  return { citations, cleanText: text };
+}
+
+function buildCitationSup(
+  citationNumber: number,
+  onCitationClick: ((citationNumber: number) => void) | undefined,
+  key: string
+) {
+  const isInteractive = typeof onCitationClick === 'function';
+  const activateCitation = () => {
+    if (isInteractive) {
+      onCitationClick?.(citationNumber);
+    }
+  };
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (!isInteractive) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onCitationClick?.(citationNumber);
+    }
+  };
+
+  return (
+    <sup
+      key={key}
+      className="citation-link"
+      role={isInteractive ? 'button' : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? `Reference ${citationNumber}` : undefined}
+      data-citation-number={citationNumber}
+      onClick={isInteractive ? activateCitation : undefined}
+      onKeyDown={handleKeyDown}
+      title={`Reference ${citationNumber}`}
+    >
+      [{citationNumber}]
+    </sup>
+  );
+}
+
 export function renderTextWithCitations(
-  text: string, 
-  onCitationClick?: (citationNumber: number) => void
+  text: string,
+  onCitationClick?: (citationNumber: number) => void,
+  keyPrefix = 'citation'
 ): React.ReactNode[] {
-  const { citations, cleanText } = parseCitations(text);
-  
-  if (citations.length === 0) {
+  if (!text || typeof text !== 'string') {
     return [text];
   }
-  
-  // Create a set of unique citation numbers for deduplication
-  // but keep original numbers for display
-  const uniqueCitations = new Set<number>();
-  citations.forEach(citation => {
-    uniqueCitations.add(citation.number);
-  });
-  
-  // Split text by citation placeholders and render with superscripts
+
   const parts: React.ReactNode[] = [];
-  let remainingText = cleanText;
-  let partIndex = 0;
-  
-  // Replace placeholders with actual superscript elements
-  const citationPlaceholderPattern = /__CITATION_(\d+)__/g;
+  const pattern = getCitationRegex();
+  pattern.lastIndex = 0;
   let lastIndex = 0;
-  let match;
-  
-  while ((match = citationPlaceholderPattern.exec(remainingText)) !== null) {
-    const beforeText = remainingText.slice(lastIndex, match.index);
-    const citationNumber = parseInt(match[1], 10);
-    
-    if (beforeText) {
-      parts.push(beforeText);
+  let match: RegExpExecArray | null;
+  let segment = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
     }
-    
-    // Use the original citation number for display
-    parts.push(
-      <sup
-        key={`citation-${citationNumber}-${partIndex++}`}
-        className="citation-link"
-        onClick={() => onCitationClick?.(citationNumber)}
-        title={`Reference ${citationNumber}`}
-      >
-        {citationNumber}
-      </sup>
-    );
-    
+
+    const citationNumber = extractCitationNumber(match);
+    if (Number.isFinite(citationNumber)) {
+      parts.push(buildCitationSup(citationNumber, onCitationClick, `${keyPrefix}-${segment++}-${citationNumber}`));
+    } else {
+      parts.push(match[0]);
+    }
+
     lastIndex = match.index + match[0].length;
   }
-  
-  // Add any remaining text after the last citation
-  if (lastIndex < remainingText.length) {
-    parts.push(remainingText.slice(lastIndex));
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
   }
-  
-  return parts;
+
+  return parts.length > 0 ? parts : [text];
 }

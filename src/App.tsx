@@ -1,9 +1,9 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAuthenticator } from '@aws-amplify/ui-react'
 import './App.css'
 import ModelSelect from './ModelSelect'
 import { invokeAgent, createSessionId } from './api'
-import type { StructuredResponse } from './api'
+import type { KnowledgeBaseDocument, StructuredResponse } from './api'
 import { TextWithCitations } from './TextWithCitations'
 
 type Message = {
@@ -66,6 +66,34 @@ function extractAssistantSurface(text: string) {
     thinking,
     open: stillOpen
   }
+}
+
+function extractCitationNumberFromDocument(doc: KnowledgeBaseDocument, fallbackIndex?: number): number | null {
+  if (!doc) return null
+  const candidateNumber = (doc as unknown as { citation_number?: unknown }).citation_number
+  if (typeof candidateNumber === 'number' && Number.isFinite(candidateNumber)) {
+    return candidateNumber
+  }
+  if (typeof doc.id === 'string') {
+    const match = doc.id.match(/(\d+)(?!.*\d)/)
+    if (match) {
+      const parsed = Number(match[1])
+      if (Number.isFinite(parsed)) {
+        return parsed
+      }
+    }
+  }
+  if (typeof fallbackIndex === 'number') {
+    return fallbackIndex + 1
+  }
+  return null
+}
+
+function escapeAttributeSelector(value: string): string {
+  if (typeof window !== 'undefined' && typeof window.CSS !== 'undefined' && typeof window.CSS.escape === 'function') {
+    return window.CSS.escape(value)
+  }
+  return value.replace(/["\\]/g, '\\$&')
 }
 
 function ThinkingStream({
@@ -171,11 +199,11 @@ function ThinkingStream({
     return null
   }
 
-  if (done && collapsed) {
+  if (collapsed) {
     return (
-      <div className="thinking-shell collapsed">
+      <div className={`thinking-shell collapsed ${done ? 'done' : 'live'}`}>
         <button type="button" className="mini-btn thinking-toggle" onClick={onToggle}>
-          Show thinking
+          {done ? 'Thoughts' : 'Thinking...'}
         </button>
       </div>
     )
@@ -191,12 +219,10 @@ function ThinkingStream({
   return (
     <div className={`thinking-shell ${done ? 'done' : 'live'}`}>
       <div className="thinking-title">
-        <span>Thinking</span>
-        {done && (
-          <button type="button" className="mini-btn thinking-toggle" onClick={onToggle}>
-            Hide thinking
-          </button>
-        )}
+        <span></span>
+        <button type="button" className="mini-btn thinking-toggle" onClick={onToggle}>
+          {done ? 'Hide thinking' : 'Hide thinking'}
+        </button>
       </div>
       {hasText ? (
         <div ref={scrollerRef} className={windowClassNames}>
@@ -211,13 +237,35 @@ function ThinkingStream({
   )
 }
 
-function StructuredMessage({ data }: { data: StructuredResponse }) {
-  const [showTrace, setShowTrace] = useState(false)
-  const [showRaw, setShowRaw] = useState(false)
-  const [showDocuments, setShowDocuments] = useState(false)
+function StructuredMessage({
+  data,
+  registerCitationHandler
+}: {
+  data: StructuredResponse
+  registerCitationHandler: (handler: ((citationNumber: number) => void) | null) => void
+}) {
+
+  const [documentsOpen, setDocumentsOpen] = useState(false)
+  const [documentsVisible, setDocumentsVisible] = useState(false)
   const [expandedDocIds, setExpandedDocIds] = useState<Set<string>>(() => new Set())
-  const documentsSectionId = useId()
-  const rawJson = JSON.stringify(data, null, 2)
+  const [highlightedDocId, setHighlightedDocId] = useState<string | null>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const panelId = useId()
+  const panelLabelId = useId()
+
+  const citationDocMap = useMemo(() => {
+    const map = new Map<number, KnowledgeBaseDocument>()
+    if (!Array.isArray(data.documents)) {
+      return map
+    }
+    data.documents.forEach((doc, index) => {
+      const citationNumber = extractCitationNumberFromDocument(doc, index)
+      if (citationNumber != null && !map.has(citationNumber)) {
+        map.set(citationNumber, doc)
+      }
+    })
+    return map
+  }, [data.documents])
 
   // Debug: log documents presence to help diagnose missing rendering
   useEffect(() => {
@@ -228,18 +276,7 @@ function StructuredMessage({ data }: { data: StructuredResponse }) {
     }
   }, [data.documents])
 
-  function copyRaw() {
-    navigator.clipboard.writeText(rawJson).catch(() => {})
-  }
 
-  function handleCitationClick(citationNumber: number) {
-    // For now, just scroll to sources section
-    // You can implement more specific behavior later
-    const sourcesSection = document.querySelector('.sources-section');
-    if (sourcesSection) {
-      sourcesSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }
 
   function toggleDocument(id: string) {
     setExpandedDocIds(prev => {
@@ -253,6 +290,99 @@ function StructuredMessage({ data }: { data: StructuredResponse }) {
     })
   }
 
+  const openDocuments = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+    setDocumentsVisible(true)
+    requestAnimationFrame(() => setDocumentsOpen(true))
+  }, [])
+
+  const closeDocuments = useCallback(() => {
+    setDocumentsOpen(false)
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+    }
+    closeTimerRef.current = window.setTimeout(() => {
+      setDocumentsVisible(false)
+      closeTimerRef.current = null
+    }, 240)
+  }, [])
+
+  useEffect(() => {
+    if (!documentsOpen) return
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeDocuments()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [documentsOpen, closeDocuments])
+
+  useEffect(() => {
+    if (!highlightedDocId) return
+    const timeout = window.setTimeout(() => {
+      setHighlightedDocId(null)
+    }, 3500)
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [highlightedDocId])
+
+  useEffect(() => {
+    if (!documentsOpen || !highlightedDocId) return
+    const timer = window.setTimeout(() => {
+      const selector = `[data-doc-id="${escapeAttributeSelector(highlightedDocId)}"]`
+      const target = document.querySelector(selector)
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 120)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [documentsOpen, highlightedDocId])
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current)
+      }
+    }
+  }, [])
+
+  const handleCitationClick = useCallback((citationNumber: number) => {
+    if (!data.documents || data.documents.length === 0) {
+      // No documents available, just open the documents panel if possible
+      return
+    }
+
+    const matchingDoc = citationDocMap.get(citationNumber)
+    if (matchingDoc) {
+      setExpandedDocIds(prev => {
+        const next = new Set(prev)
+        next.add(matchingDoc.id)
+        return next
+      })
+      setHighlightedDocId(matchingDoc.id)
+      openDocuments()
+      return
+    }
+
+    if (data.documents && data.documents.length > 0) {
+      openDocuments()
+    }
+  }, [citationDocMap, data.documents, openDocuments])
+
+  useEffect(() => {
+    registerCitationHandler(handleCitationClick)
+    return () => {
+      registerCitationHandler(null)
+    }
+  }, [handleCitationClick, registerCitationHandler])
+
   return (
     <div className="structured-response">
       <div className="answer-section">
@@ -260,182 +390,152 @@ function StructuredMessage({ data }: { data: StructuredResponse }) {
           text={data.answer || ''} 
           className="answer-text"
           onCitationClick={handleCitationClick}
+          renderMarkdown
         />
       </div>
 
       {/* Minimal documents list (knowledge base retrievals) */}
       {data.documents && data.documents.length > 0 && (
-        <div className={`kb-documents ${showDocuments ? 'open' : 'collapsed'}`}>
-          <button
-            type="button"
-            className={`kb-documents-header ${showDocuments ? 'open' : ''}`}
-            onClick={() => setShowDocuments(prev => !prev)}
-            aria-expanded={showDocuments}
-            aria-controls={documentsSectionId}
-          >
-            <span
-              className={`kb-documents-caret ${showDocuments ? 'open' : ''}`}
-              aria-hidden="true"
-            />
-            <span className="kb-documents-title">Retrieved Documents</span>
-            <span className="kb-documents-count">({data.documents.length})</span>
-          </button>
-          <div
-            id={documentsSectionId}
-            className={`kb-documents-body ${showDocuments ? 'open' : ''}`}
-          >
-            <ul className="kb-documents-list">
-              {data.documents.map((doc, docIndex) => {
-                const fileName = doc.source.split('/').pop() || doc.source
-                const distance = typeof doc.distance === 'number' ? doc.distance.toFixed(3) : null
-                const content = typeof doc.content === 'string' ? doc.content : ''
-                const isExpanded = expandedDocIds.has(doc.id)
-                const docPanelId = `kb-doc-panel-${docIndex}`
-                return (
-                  <li key={doc.id} className={`kb-document-card ${isExpanded ? 'expanded' : ''}`}>
-                    <button
-                      type="button"
-                      className={`kb-document-toggle ${isExpanded ? 'open' : ''}`}
-                      onClick={() => toggleDocument(doc.id)}
-                      aria-expanded={isExpanded}
-                      aria-controls={docPanelId}
-                    >
-                      <span className={`kb-document-toggle-caret ${isExpanded ? 'open' : ''}`} aria-hidden="true" />
-                      <div className="kb-document-info">
-                        <code className="kb-document-id">{doc.id}</code>
-                        <strong className="kb-document-title">{fileName}</strong>
-                        {doc.page_number != null && (
-                          <span className="kb-document-meta">p.{doc.page_number}</span>
-                        )}
-                        {distance && (
-                          <span className="kb-document-meta">dist {distance}</span>
-                        )}
-                      </div>
-                    </button>
-                    <div className={`kb-document-preview ${isExpanded ? 'expanded' : ''}`}>
-                      {content}
-                    </div>
-                    {isExpanded && (
-                      <div id={docPanelId} className="kb-document-details">
-                        <div className="kb-document-meta-grid">
-                          <div className="kb-document-meta-item">
-                            <span className="kb-document-meta-label">Source path</span>
-                            <span className="kb-document-meta-value">{doc.source}</span>
+        <>
+          <div className="kb-documents">
+            <button
+              type="button"
+              className={`kb-documents-header ${documentsOpen ? 'open' : ''}`}
+              onClick={() => (documentsOpen ? closeDocuments() : openDocuments())}
+              aria-expanded={documentsOpen}
+              aria-controls={panelId}
+            >
+              <span
+                className={`kb-documents-caret ${documentsOpen ? 'open' : ''}`}
+                aria-hidden="true"
+              />
+              <span className="kb-documents-title">View Sources</span>
+              <span className="kb-documents-count">({data.documents.length})</span>
+            </button>
+          </div>
+
+          {documentsVisible && (
+            <>
+              <div
+                className={`kb-panel-overlay ${documentsOpen ? 'open' : 'closing'}`}
+                onClick={closeDocuments}
+              />
+              <aside
+                className={`kb-panel ${documentsOpen ? 'open' : 'closing'}`}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={panelLabelId}
+                id={panelId}
+              >
+                <header className="kb-panel-header">
+                  <div className="kb-panel-title-block">
+                    <div className="kb-panel-title" id={panelLabelId}>Retrieved Documents</div>
+                    <div className="kb-panel-subtitle">Results returned by the knowledge base</div>
+                  </div>
+                  <button type="button" className="mini-btn kb-panel-close" onClick={closeDocuments}>
+                    Close
+                  </button>
+                </header>
+                <div className="kb-panel-body">
+                  <ul className="kb-documents-list">
+                    {data.documents.map((doc, docIndex) => {
+                      const fileName = doc.source.split('/').pop() || doc.source
+                      const distance = typeof doc.distance === 'number' ? doc.distance.toFixed(3) : null
+                      const content = typeof doc.content === 'string' ? doc.content : ''
+                      const isExpanded = expandedDocIds.has(doc.id)
+                      const docPanelId = `${panelId}-doc-${docIndex}`
+                      const cardClassName = [
+                        'kb-document-card',
+                        isExpanded ? 'expanded' : '',
+                        highlightedDocId === doc.id ? 'highlighted' : ''
+                      ].filter(Boolean).join(' ')
+                      return (
+                        <li
+                          key={doc.id}
+                          className={cardClassName}
+                          data-doc-id={doc.id}
+                        >
+                          <button
+                            type="button"
+                            className={`kb-document-toggle ${isExpanded ? 'open' : ''}`}
+                            onClick={() => toggleDocument(doc.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={docPanelId}
+                          >
+                            <span className={`kb-document-toggle-caret ${isExpanded ? 'open' : ''}`} aria-hidden="true" />
+                            <div className="kb-document-info">
+                              <div className="kb-document-meta-row">
+                                <code className="kb-document-id">
+                                  {doc.id.replace(/^citation_(\d+)$/, 'Citation $1')}
+                                </code>
+                                {doc.page_number != null && (
+                                  <span className="kb-document-meta">Page: {doc.page_number}</span>
+                                )}
+                                {distance && (
+                                  <span className="kb-document-meta">Score: {(1 - parseFloat(distance)).toFixed(3)}</span>
+                                )}
+                              </div>
+                              <strong className="kb-document-title">{fileName}</strong>
+                            </div>
+                          </button>
+                          <div className={`kb-document-preview ${isExpanded ? 'expanded' : ''}`}>
+                            {content}
                           </div>
-                          <div className="kb-document-meta-item">
-                            <span className="kb-document-meta-label">Document ID</span>
-                            <span className="kb-document-meta-value">{doc.id}</span>
-                          </div>
-                          {doc.page_number != null && (
-                            <div className="kb-document-meta-item">
-                              <span className="kb-document-meta-label">Page</span>
-                              <span className="kb-document-meta-value">{doc.page_number}</span>
+                          {isExpanded && (
+                            <div id={docPanelId} className="kb-document-details">
+                              <div className="kb-document-meta-grid">
+                                <div className="kb-document-meta-item">
+                                  <span className="kb-document-meta-label">Source path</span>
+                                  <span className="kb-document-meta-value">{doc.source}</span>
+                                </div>
+                                <div className="kb-document-meta-item">
+                                  <span className="kb-document-meta-label">Document ID</span>
+                                  <span className="kb-document-meta-value">{doc.id}</span>
+                                </div>
+                                {doc.page_number != null && (
+                                  <div className="kb-document-meta-item">
+                                    <span className="kb-document-meta-label">Page</span>
+                                    <span className="kb-document-meta-value">{doc.page_number}</span>
+                                  </div>
+                                )}
+                                {distance && (
+                                  <div className="kb-document-meta-item">
+                                    <span className="kb-document-meta-label">Vector distance</span>
+                                    <span className="kb-document-meta-value">{distance}</span>
+                                  </div>
+                                )}
+                              </div>
+                              {doc.related_uris && doc.related_uris.length > 0 && (
+                                <div className="kb-document-related expanded">
+                                  <div className="kb-document-meta-label">Related assets</div>
+                                  <ul className="kb-document-links">
+                                    {doc.related_uris.map(uri => (
+                                      <li key={uri}>
+                                        <a href={uri} target="_blank" rel="noopener noreferrer">{uri}</a>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
                             </div>
                           )}
-                          {distance && (
-                            <div className="kb-document-meta-item">
-                              <span className="kb-document-meta-label">Vector distance</span>
-                              <span className="kb-document-meta-value">{distance}</span>
+                          {!isExpanded && doc.related_uris && doc.related_uris.length > 0 && (
+                            <div className="kb-document-related">
+                              Related assets: {doc.related_uris.length}
                             </div>
                           )}
-                        </div>
-                        {doc.related_uris && doc.related_uris.length > 0 && (
-                          <div className="kb-document-related expanded">
-                            <div className="kb-document-meta-label">Related assets</div>
-                            <ul className="kb-document-links">
-                              {doc.related_uris.map(uri => (
-                                <li key={uri}>
-                                  <a href={uri} target="_blank" rel="noopener noreferrer">{uri}</a>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {!isExpanded && doc.related_uris && doc.related_uris.length > 0 && (
-                      <div className="kb-document-related">
-                        Related assets: {doc.related_uris.length}
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {data.sources && data.sources.length > 0 && (
-        <div className="sources-section">
-          <div className="sources-header">📚 Surse juridice:</div>
-          <div className="sources-list">
-            {data.sources.map((source, index) => (
-              <div key={index} className="source-item">
-                <span className="source-number">{index + 1}</span>
-                <div className="source-details">
-                  <div className="source-file">Document ID: {source.file_id}</div>
-                  <div className="source-act">Act juridic ID: {source.id_act_baza}</div>
-                  {source.articolul && (
-                    <div className="source-articol">{source.articolul}</div>
-                  )}
+                        </li>
+                      )
+                    })}
+                  </ul>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(data.search_trace || data.methodology || data.limitations) && (
-        <div className="trace-panel">
-          <div className="trace-header" onClick={() => setShowTrace(v => !v)}>
-            <span>🔎 Retrieval trace & metodologie</span>
-            <button className="mini-btn" type="button">{showTrace ? 'Ascunde' : 'Arată'}</button>
-          </div>
-          {showTrace && (
-            <div className="trace-body">
-              {data.search_trace && data.search_trace.length > 0 && (
-                <div className="attempts">
-                  {data.search_trace.map(a => (
-                    <div key={a.attempt} className="attempt-card">
-                      <div className="attempt-title">Încercarea {a.attempt}</div>
-                      <div className="attempt-line"><strong>Interogare:</strong> <code>{a.query}</code></div>
-                      <div className="attempt-line"><strong>Rezultate:</strong> {a.retrieved_count}</div>
-                      {a.chosen_file_ids && (
-                        <div className="attempt-line"><strong>Alese:</strong> {a.chosen_file_ids.join(', ')}</div>
-                      )}
-                      {a.reasoning && (
-                        <div className="attempt-reasoning">{a.reasoning}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {data.methodology && (
-                <div className="method-block">
-                  <div className="block-label">Metodologie</div>
-                  <div className="block-text">{data.methodology}</div>
-                </div>
-              )}
-              {data.limitations && (
-                <div className="method-block">
-                  <div className="block-label">Limitări</div>
-                  <div className="block-text">{data.limitations}</div>
-                </div>
-              )}
-              <div className="raw-toggle">
-                <button className="mini-btn" type="button" onClick={() => setShowRaw(r => !r)}>{showRaw ? 'Ascunde JSON' : 'JSON brut'}</button>
-                {showRaw && (
-                  <>
-                    <button className="mini-btn" type="button" onClick={copyRaw}>Copiere</button>
-                    <pre className="raw-json"><code>{rawJson}</code></pre>
-                  </>
-                )}
-              </div>
-            </div>
+              </aside>
+            </>
           )}
-        </div>
+        </>
       )}
+
+
     </div>
   )
 }
@@ -455,7 +555,22 @@ function App() {
   const inputBarRef = useRef<HTMLFormElement>(null)
   const streamBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Buffers streaming chunks for smoother renders.
   const thinkingBuffersRef = useRef<Map<string, { text: string; raf: number | null }>>(new Map()) // Mirrors above for thinking traces.
-  
+  const globalCitationHandlerRef = useRef<((citationNumber: number) => void) | null>(null)
+
+  const registerCitationHandler = useCallback((handler: ((citationNumber: number) => void) | null) => {
+    globalCitationHandlerRef.current = handler
+  }, [])
+
+  const triggerCitationPanel = useCallback((citationNumber: number) => {
+    if (globalCitationHandlerRef.current) {
+      globalCitationHandlerRef.current(citationNumber)
+      return
+    }
+    if (import.meta.env.DEV) {
+      console.debug('Citation clicked with no registered handler:', citationNumber)
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       streamBuffersRef.current.forEach(entry => {
@@ -471,9 +586,7 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    listEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+
 
 
 
@@ -515,7 +628,7 @@ function App() {
         content: '',
         thinking: '',
         thinkingDone: false,
-        thinkingCollapsed: false
+        thinkingCollapsed: true
       }
     ])
     setInput('')
@@ -554,7 +667,7 @@ function App() {
                 ...msg,
                 content: processed.visible,
                 thinking: processed.thinking || msg.thinking || '',
-                thinkingCollapsed: processed.thinking ? false : msg.thinkingCollapsed
+                thinkingCollapsed: typeof msg.thinkingCollapsed === 'boolean' ? msg.thinkingCollapsed : true
               }
             }))
             latest.raf = null
@@ -579,7 +692,7 @@ function App() {
                 ...msg,
                 thinking: latest.text,
                 thinkingDone: done ? true : msg.thinkingDone,
-                thinkingCollapsed: typeof msg.thinkingCollapsed === 'boolean' ? msg.thinkingCollapsed : false
+                thinkingCollapsed: typeof msg.thinkingCollapsed === 'boolean' ? msg.thinkingCollapsed : true
               }
             }))
             latest.raf = null
@@ -608,7 +721,7 @@ function App() {
           thinking: finalThinking || msg.thinking || '',
           structuredData,
           thinkingDone: true,
-          thinkingCollapsed: Boolean(finalThinking) ? false : msg.thinkingCollapsed
+          thinkingCollapsed: true
         }
       }))
       const pending = streamBuffersRef.current.get(assistantId)
@@ -628,7 +741,8 @@ function App() {
         return {
           ...msg,
           content: `Error: ${errorMessage}`,
-          structuredData: undefined
+          structuredData: undefined,
+          thinkingDone: true
         }
       }))
       const pending = streamBuffersRef.current.get(assistantId)
@@ -665,7 +779,7 @@ function App() {
 
   function toggleThinking(messageId: string) {
     setMessages(prev => prev.map(msg => {
-      if (msg.id !== messageId || !msg.thinkingDone) return msg
+      if (msg.id !== messageId) return msg
       return {
         ...msg,
         thinkingCollapsed: !msg.thinkingCollapsed
@@ -697,35 +811,58 @@ function App() {
       <div className="app-main">
         <div className="chat-area">
           <div className="chat-panel">
-            {messages.map((m: Message) => (
-              <div key={m.id} className={`msg-row ${m.role}`}>
-                <div className={`bubble ${m.role === 'user' ? 'user' : 'ai'}`}>
-                  <div className="mini-role-tag">{m.role === 'user' ? 'User' : 'AI'}</div>
-                {m.role === 'assistant' && typeof m.thinking === 'string'
-                  ? (
-                    <ThinkingStream
-                      text={m.thinking}
-                      done={Boolean(m.thinkingDone)}
-                      collapsed={Boolean(m.thinkingCollapsed)}
-                      onToggle={() => toggleThinking(m.id)}
-                    />
-                  )
-                  : null}
-                {m.role === 'assistant' && m.structuredData ? (
-                  <StructuredMessage data={m.structuredData} />
-                ) : (
-                  <TextWithCitations 
-                    text={m.content} 
-                    className="plain-text"
-                    onCitationClick={(citationNumber) => {
-                      // Handle citation click for plain text messages
-                      console.log(`Citation ${citationNumber} clicked`);
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-          ))}
+            {messages.map((m: Message) => {
+              const isAssistant = m.role === 'assistant'
+              const containerClass = isAssistant ? 'assistant-output' : 'bubble user'
+              const contentText = typeof m.content === 'string' ? m.content : ''
+              const showStreamingAnswer = isAssistant && !m.structuredData && !m.thinkingDone && contentText.trim().length > 0
+              return (
+                <div key={m.id} className={`msg-row ${m.role}`}>
+                  <div className={containerClass}>
+                    <div className="mini-role-tag">{isAssistant ? 'AI' : 'User'}</div>
+                    {isAssistant && typeof m.thinking === 'string' ? (
+                      <ThinkingStream
+                        text={m.thinking}
+                        done={Boolean(m.thinkingDone)}
+                        collapsed={Boolean(m.thinkingCollapsed)}
+                        onToggle={() => toggleThinking(m.id)}
+                      />
+                    ) : null}
+                    {isAssistant ? (
+                      m.structuredData ? (
+                        <StructuredMessage 
+                          data={m.structuredData} 
+                          registerCitationHandler={registerCitationHandler}
+                        />
+                      ) : showStreamingAnswer ? (
+                        <div className="structured-response">
+                          <div className="answer-section">
+                          <TextWithCitations
+                              text={contentText}
+                              className="answer-text"
+                              renderMarkdown
+                              onCitationClick={triggerCitationPanel}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <TextWithCitations
+                          text={m.content}
+                          className="plain-text"
+                          onCitationClick={triggerCitationPanel}
+                        />
+                      )
+                    ) : (
+                      <TextWithCitations
+                        text={m.content}
+                        className="plain-text"
+                        onCitationClick={triggerCitationPanel}
+                      />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           <div ref={listEndRef} className="chat-panel-end" />
         </div>
 
