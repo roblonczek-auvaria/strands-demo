@@ -85,6 +85,7 @@
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 24px;
   padding: 32px;
+  padding-bottom: 10px;
   max-width: 460px;
   width: 100%;
   box-shadow: 
@@ -93,9 +94,25 @@
     0 8px 32px -4px rgba(0,0,0,0.35);
 }
 
+/* Logo in authenticator footer */
+[data-amplify-authenticator] img[alt="Logo"] {
+  filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.3));
+  transition: transform 200ms ease;
+}
+
+[data-amplify-authenticator] img[alt="Logo"]:hover {
+  transform: scale(1.05);
+}
+
 /* Header */
 [data-amplify-authenticator] [data-amplify-router-content] > div:first-child {
   margin-bottom: 24px;
+}
+
+/* Form */
+[data-amplify-authenticator] [data-amplify-form] {
+  padding-top: 0rem;
+  padding-bottom: 0rem;
 }
 
 /* Form fields */

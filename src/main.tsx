@@ -11,7 +11,19 @@ import './authenticator-theme.css'
 const root = createRoot(document.getElementById('root')!)
 root.render(
   <React.StrictMode>
-    <Authenticator>
+    <Authenticator
+      components={{
+        SignIn: {
+          Header: () => (
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <a href="https://www.auvaria.com" target="_blank" rel="noopener noreferrer">
+                <img src="/auvaria-full.svg" alt="Logo" style={{ height: '96px', width: '300px', filter: 'brightness(0) invert(0.7)', cursor: 'pointer' }} />
+              </a>
+            </div>
+          )
+        }
+      }}
+    >
       <App />
     </Authenticator>
   </React.StrictMode>

@@ -789,9 +789,12 @@ function App() {
 
   return (
     <div className="app-shell">
+      <div className="logo-watermark">
+        <img src="/auvaria.svg" alt="" aria-hidden="true" />
+      </div>
       <div className="header-shell">
         <div className="header">
-          <h1 className="header-title">Strands RAG Agent</h1>
+          <h1 className="header-title">AgentCore RAG</h1>
           <div style={{marginLeft:'auto', display:'flex', gap:'8px', alignItems:'center'}}>
             {user && (
               <span style={{fontSize:'13px', color:'var(--text-dim)', marginRight:'4px'}}>
