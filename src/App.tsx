@@ -68,6 +68,31 @@ function extractAssistantSurface(text: string) {
   }
 }
 
+function cleanS3SourcePath(source: string): string {
+  if (!source || typeof source !== 'string') {
+    return source
+  }
+  
+  // Match pattern: s3://bucket-name/path/to/file.ext
+  // Extract only the URL path portion (www.auvaria.com/.../) without the filename
+  const s3Pattern = /^s3:\/\/[^\/]+\/(.*?)([^\/]+\.[a-z]+)?$/i
+  const match = source.match(s3Pattern)
+  
+  if (match && match[1]) {
+    // match[1] contains the path after bucket name
+    // Remove trailing filename if it exists and return just the directory path
+    let cleanPath = match[1]
+    // Ensure it ends with / for consistency
+    if (!cleanPath.endsWith('/')) {
+      cleanPath += '/'
+    }
+    return cleanPath
+  }
+  
+  // If pattern doesn't match, return original
+  return source
+}
+
 function extractCitationNumberFromDocument(doc: KnowledgeBaseDocument, fallbackIndex?: number): number | null {
   if (!doc) return null
   const candidateNumber = (doc as unknown as { citation_number?: unknown }).citation_number
@@ -486,7 +511,11 @@ function StructuredMessage({
                               <div className="kb-document-meta-grid">
                                 <div className="kb-document-meta-item">
                                   <span className="kb-document-meta-label">Source path</span>
-                                  <span className="kb-document-meta-value">{doc.source}</span>
+                                  <span className="kb-document-meta-value">
+                                    <a href={`https://${cleanS3SourcePath(doc.source)}`} target="_blank" rel="noreferrer">
+                                      {cleanS3SourcePath(doc.source)}
+                                    </a>
+                                  </span>
                                 </div>
                                 <div className="kb-document-meta-item">
                                   <span className="kb-document-meta-label">Document ID</span>
@@ -883,7 +912,7 @@ function App() {
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder="Ask anything about the ATP documentation"
+              placeholder="What do you want to ask about Auvaria?"
               disabled={loading}
               className="input"
               style={{flex:1}}

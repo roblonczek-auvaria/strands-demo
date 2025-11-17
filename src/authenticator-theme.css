@@ -132,6 +132,7 @@
 .amplify-button--disabled {
   background-color: hsla(197.1, 36.8%, 18.6%, 0.92);
 }
+
 /* Buttons */
 [data-amplify-authenticator] .amplify-button--primary {
   padding: 14px 22px;
@@ -157,6 +158,7 @@
 }
 
 [data-amplify-authenticator] .amplify-button--primary:hover {
+  background-color: #10334e;
   transform: translateY(-2px);
   box-shadow: 0 6px 30px -6px rgba(59,130,246,0.75), 0 0 0 1px rgba(255,255,255,0.2);
 }
