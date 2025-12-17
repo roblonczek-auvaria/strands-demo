@@ -4,10 +4,10 @@ export type ModelOption = { value: string; label: string; group?: string }
 
 // Static fallback list (will be replaced by fetch to /api/models if available)
 const FALLBACK_MODELS: ModelOption[] = [
-  { value: 'eu.amazon.nova-lite-v1:0', label: 'Nova Lite' },
+  { value: 'eu.amazon.nova-2-lite-v1:0', label: 'Nova 2 Lite' },
   { value: 'eu.amazon.nova-pro-v1:0', label: 'Nova Pro' },
   { value: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5' },
-  { value: 'eu.anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4 (May 2025)' }
+  { value: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5' }
 ]
 
 export interface ModelSelectProps {

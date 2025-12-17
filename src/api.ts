@@ -61,6 +61,7 @@ export type InvokeAgentOptions = {
   onChunk?: (chunk: string) => void
   onThinking?: (update: InvokeAgentThinkingUpdate) => void
 }
+
 const AGENT_RUNTIME_ARN = import.meta.env.VITE_AGENT_RUNTIME_ARN
 const AGENT_REGION = import.meta.env.VITE_BEDROCK_REGION || 'eu-central-1'
 
@@ -123,7 +124,7 @@ export async function invokeAgent(req: ChatRequest, options?: InvokeAgentOptions
   // Build payload and explicitly request streaming when we expect chunks
   const basePayload = buildPayload(req)
   if (options?.onChunk) {
-    ;(basePayload as any).stream = true
+    ; (basePayload as any).stream = true
   }
 
   const res = await fetch(endpoint, {
@@ -246,6 +247,7 @@ async function consumeStreamResponse(res: Response, options: InvokeAgentOptions)
         }
         continue
       }
+
       if (event.type === 'chunk' && typeof event.content === 'string') {
         aggregated += event.content
         options.onChunk?.(event.content)

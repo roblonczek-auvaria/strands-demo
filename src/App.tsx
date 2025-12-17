@@ -14,6 +14,23 @@ type Message = {
   thinking?: string
   thinkingDone?: boolean
   thinkingCollapsed?: boolean
+  toolLogs?: { tool: string, input?: unknown, result?: unknown, status: 'running' | 'done' }[]
+}
+
+function ToolLog({ logs }: { logs: NonNullable<Message['toolLogs']> }) {
+  if (!logs || logs.length === 0) return null
+  return (
+    <div className="tool-logs">
+      {logs.map((log, i) => (
+        <div key={i} className={`tool-log-item ${log.status}`}>
+          <div className="tool-head">
+            <span className="tool-icon">{log.status === 'running' ? '⏳' : '🔧'}</span>
+            <span className="tool-name">Used tool: <strong>{log.tool}</strong></span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function extractAssistantSurface(text: string) {
@@ -72,12 +89,12 @@ function cleanS3SourcePath(source: string): string {
   if (!source || typeof source !== 'string') {
     return source
   }
-  
+
   // Match pattern: s3://bucket-name/path/to/file.ext
   // Extract only the URL path portion (www.auvaria.com/.../) without the filename
   const s3Pattern = /^s3:\/\/[^\/]+\/(.*?)([^\/]+\.[a-z]+)?$/i
   const match = source.match(s3Pattern)
-  
+
   if (match && match[1]) {
     // match[1] contains the path after bucket name
     // Remove trailing filename if it exists and return just the directory path
@@ -88,7 +105,7 @@ function cleanS3SourcePath(source: string): string {
     }
     return cleanPath
   }
-  
+
   // If pattern doesn't match, return original
   return source
 }
@@ -411,8 +428,8 @@ function StructuredMessage({
   return (
     <div className="structured-response">
       <div className="answer-section">
-        <TextWithCitations 
-          text={data.answer || ''} 
+        <TextWithCitations
+          text={data.answer || ''}
           className="answer-text"
           onCitationClick={handleCitationClick}
           renderMarkdown
@@ -578,7 +595,7 @@ function App() {
   const [sessionId, setSessionId] = useState(() => createSessionId())
 
   // Default immediately to Nova Pro so the selector renders that value before backend /api/models fetch.
-  const [modelId, setModelId] = useState<string>('eu.amazon.nova-pro-v1:0')
+  const [modelId, setModelId] = useState<string>('eu.amazon.nova-2-lite-v1:0')
   // Removed activeOnly toggle (no longer needed)
   const listEndRef = useRef<HTMLDivElement>(null)
   const inputBarRef = useRef<HTMLFormElement>(null)
@@ -734,6 +751,34 @@ function App() {
           if (done && entry.raf === null) {
             flush()
           }
+        },
+        onToolUse: (tool, input) => {
+          setMessages(prev => prev.map(msg => {
+            if (msg.id !== assistantId) return msg
+            const newLog = { tool, input, status: 'running' as const }
+            return {
+              ...msg,
+              toolLogs: [...(msg.toolLogs || []), newLog]
+            }
+          }))
+        },
+        onToolResult: (tool, result) => {
+          setMessages(prev => prev.map(msg => {
+            if (msg.id !== assistantId) return msg
+            const logs = [...(msg.toolLogs || [])]
+            // Find last running instance of this tool
+            let foundIndex = -1
+            for (let i = logs.length - 1; i >= 0; i--) {
+              if (logs[i].tool === tool && logs[i].status === 'running') {
+                foundIndex = i
+                break
+              }
+            }
+            if (foundIndex !== -1) {
+              logs[foundIndex] = { ...logs[foundIndex], result, status: 'done' }
+            }
+            return { ...msg, toolLogs: logs }
+          }))
         }
       })
 
@@ -824,9 +869,9 @@ function App() {
       <div className="header-shell">
         <div className="header">
           <h1 className="header-title">AgentCore RAG</h1>
-          <div style={{marginLeft:'auto', display:'flex', gap:'8px', alignItems:'center'}}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
             {user && (
-              <span style={{fontSize:'13px', color:'var(--text-dim)', marginRight:'4px'}}>
+              <span style={{ fontSize: '13px', color: 'var(--text-dim)', marginRight: '4px' }}>
                 {user.signInDetails?.loginId || 'User'}
               </span>
             )}
@@ -860,16 +905,19 @@ function App() {
                         onToggle={() => toggleThinking(m.id)}
                       />
                     ) : null}
+                    {isAssistant && m.toolLogs && m.toolLogs.length > 0 ? (
+                      <ToolLog logs={m.toolLogs} />
+                    ) : null}
                     {isAssistant ? (
                       m.structuredData ? (
-                        <StructuredMessage 
-                          data={m.structuredData} 
+                        <StructuredMessage
+                          data={m.structuredData}
                           registerCitationHandler={registerCitationHandler}
                         />
                       ) : showStreamingAnswer ? (
                         <div className="structured-response">
                           <div className="answer-section">
-                          <TextWithCitations
+                            <TextWithCitations
                               text={contentText}
                               className="answer-text"
                               renderMarkdown
@@ -895,43 +943,43 @@ function App() {
                 </div>
               )
             })}
-          <div ref={listEndRef} className="chat-panel-end" />
+            <div ref={listEndRef} className="chat-panel-end" />
+          </div>
+
         </div>
 
-      </div>
-
-      <div className="input-bar-container">
-        <form
-          ref={inputBarRef}
-          onSubmit={sendMessage}
-          className="input-bar"
-          style={{flexWrap:'wrap', alignItems:'stretch'}}
-        >
-          <div style={{display:'flex', flex: '1 1 auto', gap:'8px', minWidth:'260px'}}>
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="What do you want to ask about Auvaria?"
-              disabled={loading}
-              className="input"
-              style={{flex:1}}
-            />
-            <div style={{maxWidth:'240px', flex:'0 0 auto'}}>
-              <ModelSelect
-                value={modelId}
-                onChange={setModelId}
+        <div className="input-bar-container">
+          <form
+            ref={inputBarRef}
+            onSubmit={sendMessage}
+            className="input-bar"
+            style={{ flexWrap: 'wrap', alignItems: 'stretch' }}
+          >
+            <div style={{ display: 'flex', flex: '1 1 auto', gap: '8px', minWidth: '260px' }}>
+              <input
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder="What do you want to ask about Auvaria?"
                 disabled={loading}
-                title="Choose foundation model"
+                className="input"
+                style={{ flex: 1 }}
               />
+              <div style={{ maxWidth: '240px', flex: '0 0 auto' }}>
+                <ModelSelect
+                  value={modelId}
+                  onChange={setModelId}
+                  disabled={loading}
+                  title="Choose foundation model"
+                />
+              </div>
+              {/* Active only toggle removed */}
             </div>
-            {/* Active only toggle removed */}
-          </div>
-          <button type="submit" disabled={loading || !input.trim()} className="button" style={{marginLeft:'auto'}}>
-            {loading ? 'Sending…' : 'Send'}
-          </button>
-        </form>
-      </div>
+            <button type="submit" disabled={loading || !input.trim()} className="button" style={{ marginLeft: 'auto' }}>
+              {loading ? 'Sending…' : 'Send'}
+            </button>
+          </form>
+        </div>
 
         <p className="helper" />
       </div>
