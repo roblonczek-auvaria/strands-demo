@@ -14,24 +14,8 @@ type Message = {
   thinking?: string
   thinkingDone?: boolean
   thinkingCollapsed?: boolean
-  toolLogs?: { tool: string, input?: unknown, result?: unknown, status: 'running' | 'done' }[]
 }
 
-function ToolLog({ logs }: { logs: NonNullable<Message['toolLogs']> }) {
-  if (!logs || logs.length === 0) return null
-  return (
-    <div className="tool-logs">
-      {logs.map((log, i) => (
-        <div key={i} className={`tool-log-item ${log.status}`}>
-          <div className="tool-head">
-            <span className="tool-icon">{log.status === 'running' ? '⏳' : '🔧'}</span>
-            <span className="tool-name">Used tool: <strong>{log.tool}</strong></span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 function extractAssistantSurface(text: string) {
   if (!text) {
@@ -748,37 +732,6 @@ function App() {
             entry.raf = requestAnimationFrame(flush)
           }
 
-          if (done && entry.raf === null) {
-            flush()
-          }
-        },
-        onToolUse: (tool, input) => {
-          setMessages(prev => prev.map(msg => {
-            if (msg.id !== assistantId) return msg
-            const newLog = { tool, input, status: 'running' as const }
-            return {
-              ...msg,
-              toolLogs: [...(msg.toolLogs || []), newLog]
-            }
-          }))
-        },
-        onToolResult: (tool, result) => {
-          setMessages(prev => prev.map(msg => {
-            if (msg.id !== assistantId) return msg
-            const logs = [...(msg.toolLogs || [])]
-            // Find last running instance of this tool
-            let foundIndex = -1
-            for (let i = logs.length - 1; i >= 0; i--) {
-              if (logs[i].tool === tool && logs[i].status === 'running') {
-                foundIndex = i
-                break
-              }
-            }
-            if (foundIndex !== -1) {
-              logs[foundIndex] = { ...logs[foundIndex], result, status: 'done' }
-            }
-            return { ...msg, toolLogs: logs }
-          }))
         }
       })
 
@@ -904,9 +857,6 @@ function App() {
                         collapsed={Boolean(m.thinkingCollapsed)}
                         onToggle={() => toggleThinking(m.id)}
                       />
-                    ) : null}
-                    {isAssistant && m.toolLogs && m.toolLogs.length > 0 ? (
-                      <ToolLog logs={m.toolLogs} />
                     ) : null}
                     {isAssistant ? (
                       m.structuredData ? (
